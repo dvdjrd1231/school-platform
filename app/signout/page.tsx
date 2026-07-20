@@ -1,25 +1,31 @@
 "use client"
 
-import { useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { useRole } from "@/components/context/role-context"
+import { useEffect, useRef } from "react"
+import { signOut } from "next-auth/react"
 
+/**
+ * Signs the user out and returns them to the sign-in page.
+ *
+ * This must call NextAuth's signOut() to clear the session cookie. Clearing
+ * local role state alone leaves the session valid, so the middleware would
+ * simply redirect the user straight back into the app.
+ */
 export default function SignOutPage() {
-  const router = useRouter()
-  const { setRole } = useRole()
+  // React 18+ runs effects twice in development; without this guard signOut()
+  // fires twice and the second call races the redirect.
+  const startedRef = useRef(false)
 
   useEffect(() => {
-    // Clear the user role
-    setRole("student")
+    if (startedRef.current) return
+    startedRef.current = true
 
-    // Redirect to sign in page
-    router.push("/signin")
-  }, [router, setRole])
+    void signOut({ callbackUrl: "/signin" })
+  }, [])
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-emerald-100 flex items-center justify-center">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-emerald-50 to-emerald-100">
       <div className="text-center">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">Signing out...</h1>
+        <h1 className="mb-2 text-2xl font-bold text-gray-900">Signing out…</h1>
         <p className="text-gray-600">Please wait while we sign you out.</p>
       </div>
     </div>

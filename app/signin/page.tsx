@@ -28,11 +28,6 @@ export default function SignInPage() {
             </p>
           </div>
         </div>
-
-        <div className="mt-6 bg-white/80 rounded-lg p-4 text-center">
-          <p className="text-sm text-gray-600 mb-2">Test Credentials:</p>
-          <p className="text-xs text-gray-500">Username: test | Password: 123456</p>
-        </div>
       </div>
     </div>
   )
