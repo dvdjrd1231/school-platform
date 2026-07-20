@@ -1,0 +1,19 @@
+Project Details 
+$250.00 – 750.00 USD
+
+Its not paying over 600 dollars. you will build the core system. after this I will keep you to stay working on the system forever.
+
+I have an online school platform that is already partially built in React, but several core modules still need to be wrapped up and connected to a new MongoDB datastore. The items currently in progress include student registration and management, course content uploading and management, and the assessment / grading workflow. Beyond finishing those, I also want to introduce student performance tracking and a dedicated parent-teacher communication portal so progress reports and messages flow smoothly between all parties.
+
+The existing codebase is clean React with a lightweight Node layer; what is missing is the full MongoDB integration plus the remaining UI, API endpoints, and business logic that tie everything together. I will share the current repository, schema drafts, and UX wireframes as soon as we start.
+
+Deliverables
+• Finalised student registration, course, and assessment modules hooked to MongoDB
+• New endpoints and dashboards for performance tracking (charts, trends, export)
+• Messaging/notification portal for parents and teachers with real-time updates
+• Clear documentation and basic test coverage so future contributors can extend the system
+• Deployment script (Docker or similar) and a short hand-off walkthrough
+
+If you are comfortable moving quickly in React, Node.js, and MongoDB and can keep code readable and well-documented, let’s get this platform finished and live.
+
+Its not paying over 600 dollars. you will build the core system. after this I will keep you to stay working on the system forever.
