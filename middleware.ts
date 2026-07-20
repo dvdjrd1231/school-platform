@@ -18,15 +18,22 @@ export default auth((req) => {
   const { pathname } = req.nextUrl
   const session = req.auth
 
+  // Both the "signed in" and "not signed in" branches below must test the SAME
+  // condition. An earlier version checked `session` here and `session?.user`
+  // further down; when the JWT could not be verified (a missing AUTH_SECRET,
+  // for instance) NextAuth returns a session object with no `user`, and the two
+  // checks bounced the request between / and /signin forever.
+  const isAuthenticated = Boolean(session?.user?.id)
+
   if (PUBLIC_ROUTES.some((r) => pathname.startsWith(r))) {
     // Already signed in? Don't show the sign-in page again.
-    if (session && (pathname === "/signin" || pathname === "/register")) {
+    if (isAuthenticated && (pathname === "/signin" || pathname === "/register")) {
       return NextResponse.redirect(new URL("/", req.nextUrl))
     }
     return NextResponse.next()
   }
 
-  if (!session?.user) {
+  if (!isAuthenticated) {
     // API callers get a 401 rather than an HTML redirect they can't parse.
     if (pathname.startsWith("/api")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -36,7 +43,7 @@ export default auth((req) => {
     return NextResponse.redirect(signInUrl)
   }
 
-  const roles = session.user.roles ?? []
+  const roles = session?.user?.roles ?? []
   const rule = ROLE_PROTECTED.find((r) => pathname.startsWith(r.prefix))
   if (rule && !rule.roles.some((role) => roles.includes(role as never))) {
     if (pathname.startsWith("/api")) {
