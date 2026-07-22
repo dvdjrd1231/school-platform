@@ -62,7 +62,7 @@ Seeded accounts all use the password `Password123!`:
 | --- | --- |
 | `admin@maatk12.edu` | admin |
 | `sarah.johnson@maatk12.edu` | teacher |
-| `john.smith@maatk12.edu` | student |
+| `john.smith@maatk12.edu` | student | 
 | `parent@maatk12.edu` | parent (guardian of John Smith + Alex Chen) |
 
 **Change these before any real deployment.**

@@ -323,11 +323,26 @@ string `https://`. Set `DOMAIN` (a hostname, or `:80` plus
 `docker compose up -d`. Compose now refuses to start when a required value is
 missing, so this should surface as a clear message rather than a runtime crash.
 
-**`/api/health` shows `"connected": false`**
-Look at `docker compose logs mongo`. Usually `MONGO_ROOT_USER` /
-`MONGO_ROOT_PASSWORD` were changed *after* the volume was first created — the
-credentials are only applied on an empty volume. Either restore the original
-values, or wipe and start over with `docker compose down -v` (destroys data).
+**`MongoServerError: Authentication failed`, or `/api/health` shows `"connected": false`**
+
+`MONGO_INITDB_ROOT_USERNAME` / `PASSWORD` are applied **only when the data
+volume is empty**, on Mongo's very first start. Editing them in `.env`
+afterwards changes nothing — the database still expects the original password,
+so the app and `mongosh` both fail to authenticate.
+
+This bites most often when the stack was first started while `.env` still held
+placeholder text: the placeholder *became* the password.
+
+With no data yet, wipe the volume and let it re-initialize:
+
+```bash
+docker compose down -v      # DELETES the database volume
+docker compose up -d --build
+```
+
+If the database already holds real data, do **not** use `-v`. Restore the
+original credentials in `.env` instead, or change the password from inside
+mongosh with `db.changeUserPassword()`.
 
 **Sign-in fails with the right password**
 Check `/api/health` shows `ADMIN_USER: true` and `AUTH_SECRET: true`. Remember
