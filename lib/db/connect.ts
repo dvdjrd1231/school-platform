@@ -5,7 +5,33 @@ import mongoose from "mongoose"
 // connection promise on globalThis so it survives hot reloads in dev and warm
 // starts in production.
 
-const MONGODB_URI = process.env.MONGODB_URI
+/**
+ * Resolve the connection string.
+ *
+ * Read lazily rather than at module scope: the value is captured at import
+ * time otherwise, which makes a missing variable look like a permanent failure
+ * even after it is configured. The fallbacks cover the different names the
+ * Vercel/Atlas integrations inject depending on how the store was linked.
+ */
+function resolveUri(): { uri: string | undefined; source: string | undefined } {
+  const candidates = [
+    "MONGODB_URI",
+    "MONGODB_URL",
+    "DATABASE_URL",
+    "MONGO_URL",
+    "MONGODB_ATLAS_URI",
+  ]
+  for (const name of candidates) {
+    const value = process.env[name]
+    if (value) return { uri: value, source: name }
+  }
+  return { uri: undefined, source: undefined }
+}
+
+/** Strip credentials before an error message reaches a log or HTTP response. */
+export function redactUri(message: string): string {
+  return message.replace(/\/\/[^:@/]+:[^@/]+@/g, "//***:***@")
+}
 
 interface MongooseCache {
   conn: typeof mongoose | null
@@ -23,12 +49,20 @@ global._mongooseCache = cached
 export async function connectDB(): Promise<typeof mongoose> {
   if (cached.conn) return cached.conn
 
-  if (!MONGODB_URI) {
-    throw new Error("MONGODB_URI is not set. Add it to .env.local (see .env.example).")
+  const { uri } = resolveUri()
+  if (!uri) {
+    throw new Error(
+      "No MongoDB connection string found. Set MONGODB_URI in your Vercel project " +
+        "(Settings -> Environment Variables), then redeploy. See .env.example.",
+    )
   }
 
   if (!cached.promise) {
-    cached.promise = mongoose.connect(MONGODB_URI, {
+    cached.promise = mongoose.connect(uri, {
+      // A connection string from an integration often has no database in its
+      // path, in which case Mongoose silently uses "test". Name it explicitly
+      // so collections land somewhere predictable.
+      dbName: process.env.MONGODB_DB || "school-platform",
       // Fail fast rather than hanging a serverless invocation until timeout.
       serverSelectionTimeoutMS: 10_000,
       // bufferCommands queues operations while disconnected, which hides

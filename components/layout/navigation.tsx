@@ -18,6 +18,7 @@ import {
   Megaphone,
   Home,
   GraduationCap,
+  TrendingUp,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -52,6 +53,11 @@ const navigationItems = [
     title: "Grades",
     href: "/grades",
     icon: BarChart3,
+  },
+  {
+    title: "Performance",
+    href: "/performance",
+    icon: TrendingUp,
   },
 ]
 

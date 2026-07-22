@@ -1,10 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   FileText,
@@ -13,37 +12,59 @@ import {
   CheckCircle,
   AlertTriangle,
   Upload,
-  Download,
   Eye,
   Plus,
-  Filter,
   Search,
 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import Link from "next/link"
-import { getAssignments } from "@/lib/database"
 import { useRouter } from "next/navigation"
+
+import { useApi } from "@/hooks/use-api"
+import { AsyncState } from "@/components/ui/async-state"
 import { useRole } from "@/components/context/role-context"
 
-const getStatusColor = (status: string) => {
-  switch (status) {
-    case "submitted":
-      return "text-green-600"
-    case "in-progress":
-      return "text-blue-600"
-    case "overdue":
-      return "text-red-600"
-    default:
-      return "text-muted-foreground"
-  }
+interface ApiAssignment {
+  _id: string
+  title: string
+  description?: string
+  course?: { _id: string; title?: string; code?: string; subject?: string } | null
+  dueDate: string
+  points: number
+  category: string
+  status: "draft" | "published" | "closed"
+  attachments: { name: string; url: string }[]
 }
 
-const getStatusBadge = (status: string) => {
+interface ApiSubmission {
+  _id: string
+  assignment?: { _id: string } | string
+  status: "not-started" | "in-progress" | "submitted" | "graded" | "returned"
+  score?: number | null
+  submittedAt?: string | null
+  feedback?: string | null
+}
+
+/** Per-student display status derived from the submission (or lack of one). */
+type DisplayStatus = "not-started" | "submitted" | "graded" | "overdue"
+
+function deriveStatus(assignment: ApiAssignment, submission: ApiSubmission | undefined): DisplayStatus {
+  if (submission) {
+    if (submission.status === "graded" || submission.status === "returned" || submission.score != null) {
+      return "graded"
+    }
+    if (submission.status === "submitted") return "submitted"
+  }
+  if (new Date(assignment.dueDate).getTime() < Date.now()) return "overdue"
+  return "not-started"
+}
+
+function statusBadge(status: DisplayStatus) {
   switch (status) {
+    case "graded":
+      return <Badge className="bg-green-100 text-green-800">Graded</Badge>
     case "submitted":
-      return <Badge className="bg-green-100 text-green-800">Submitted</Badge>
-    case "in-progress":
-      return <Badge className="bg-blue-100 text-blue-800">In Progress</Badge>
+      return <Badge className="bg-blue-100 text-blue-800">Submitted</Badge>
     case "overdue":
       return <Badge className="bg-red-100 text-red-800">Overdue</Badge>
     default:
@@ -51,12 +72,8 @@ const getStatusBadge = (status: string) => {
   }
 }
 
-const getDaysUntilDue = (dueDate: string) => {
-  const due = new Date(dueDate)
-  const now = new Date()
-  const diffTime = due.getTime() - now.getTime()
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-  return diffDays
+function daysUntil(dueDate: string) {
+  return Math.ceil((new Date(dueDate).getTime() - Date.now()) / 86_400_000)
 }
 
 export function AssignmentList() {
@@ -65,43 +82,56 @@ export function AssignmentList() {
   const router = useRouter()
   const { isTeacher, isAdmin } = useRole()
 
-  const assignments = getAssignments()
+  const assignmentsReq = useApi<{ assignments: ApiAssignment[] }>("/api/assignments")
+  // Staff grade rather than submit, so their own submissions are irrelevant.
+  const submissionsReq = useApi<{ submissions: ApiSubmission[] }>(
+    isTeacher || isAdmin ? null : "/api/submissions",
+  )
 
-  const filteredAssignments = assignments.filter((assignment) => {
+  const assignments = assignmentsReq.data?.assignments ?? []
+
+  const submissionByAssignment = useMemo(() => {
+    const map = new Map<string, ApiSubmission>()
+    for (const s of submissionsReq.data?.submissions ?? []) {
+      const id = typeof s.assignment === "string" ? s.assignment : s.assignment?._id
+      if (id) map.set(id, s)
+    }
+    return map
+  }, [submissionsReq.data])
+
+  const withStatus = useMemo(
+    () =>
+      assignments.map((a) => ({
+        assignment: a,
+        submission: submissionByAssignment.get(a._id),
+        status: deriveStatus(a, submissionByAssignment.get(a._id)),
+      })),
+    [assignments, submissionByAssignment],
+  )
+
+  const filtered = withStatus.filter(({ assignment, status }) => {
     const matchesSearch = assignment.title.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesTab =
       selectedTab === "all" ||
-      (selectedTab === "pending" && ["not-started", "in-progress"].includes(assignment.status)) ||
-      (selectedTab === "submitted" && assignment.status === "submitted") ||
-      (selectedTab === "overdue" && assignment.status === "overdue")
+      (selectedTab === "pending" && status === "not-started") ||
+      (selectedTab === "submitted" && (status === "submitted" || status === "graded")) ||
+      (selectedTab === "overdue" && status === "overdue")
     return matchesSearch && matchesTab
   })
 
   const stats = {
-    total: assignments.length,
-    submitted: assignments.filter((a) => a.status === "submitted").length,
-    pending: assignments.filter((a) => ["not-started", "in-progress"].includes(a.status)).length,
-    overdue: assignments.filter((a) => a.status === "overdue").length,
-  }
-
-  const handleDownload = (filename: string) => {
-    const link = document.createElement("a")
-    link.href = `/sample-assignment.pdf`
-    link.download = filename
-    link.click()
-  }
-
-  const handleViewFile = (filename: string) => {
-    window.open(`/sample-assignment.pdf`, "_blank")
+    total: withStatus.length,
+    submitted: withStatus.filter((a) => a.status === "submitted" || a.status === "graded").length,
+    pending: withStatus.filter((a) => a.status === "not-started").length,
+    overdue: withStatus.filter((a) => a.status === "overdue").length,
   }
 
   return (
     <div className="flex-1 p-6 space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-balance">Assignments</h1>
-          <p className="text-muted-foreground">Mathematics - Grade 10</p>
+          <p className="text-muted-foreground">Across your courses</p>
         </div>
         {(isTeacher || isAdmin) && (
           <Button onClick={() => router.push("/classrooms/assignments/new")}>
@@ -111,7 +141,6 @@ export function AssignmentList() {
         )}
       </div>
 
-      {/* Search */}
       <div className="flex items-center gap-4">
         <div className="flex-1 max-w-md">
           <div className="relative">
@@ -124,13 +153,8 @@ export function AssignmentList() {
             />
           </div>
         </div>
-        <Button variant="outline" size="sm" onClick={() => router.push("/classrooms/assignments/filter")}>
-          <Filter className="h-4 w-4 mr-2" />
-          Filter
-        </Button>
       </div>
 
-      {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-4">
@@ -160,7 +184,7 @@ export function AssignmentList() {
               <Clock className="h-5 w-5 text-blue-500" />
               <div>
                 <p className="text-sm font-medium">{stats.pending} Pending</p>
-                <p className="text-xs text-muted-foreground">In progress</p>
+                <p className="text-xs text-muted-foreground">Not started</p>
               </div>
             </div>
           </CardContent>
@@ -178,7 +202,6 @@ export function AssignmentList() {
         </Card>
       </div>
 
-      {/* Tabs */}
       <Tabs value={selectedTab} onValueChange={setSelectedTab}>
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="all">All ({stats.total})</TabsTrigger>
@@ -188,132 +211,107 @@ export function AssignmentList() {
         </TabsList>
 
         <TabsContent value={selectedTab} className="space-y-4 mt-6">
-          {filteredAssignments.map((assignment) => {
-            const daysUntilDue = getDaysUntilDue(assignment.dueDate)
-            const isUrgent = daysUntilDue <= 2 && assignment.status !== "submitted"
+          <AsyncState
+            isLoading={assignmentsReq.isLoading || submissionsReq.isLoading}
+            error={assignmentsReq.error}
+            isEmpty={filtered.length === 0}
+            emptyMessage="No assignments match this view."
+            onRetry={assignmentsReq.refetch}
+          >
+            {filtered.map(({ assignment, submission, status }) => {
+              const left = daysUntil(assignment.dueDate)
+              const isUrgent = left <= 2 && status !== "submitted" && status !== "graded"
 
-            return (
-              <Card key={assignment.id} className={`${isUrgent ? "border-red-200 bg-red-50/50" : ""}`}>
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <Link href={`/classrooms/assignments/${assignment.id}`}>
-                          <h3 className="text-lg font-semibold hover:text-primary cursor-pointer text-balance">
-                            {assignment.title}
-                          </h3>
-                        </Link>
-                        {getStatusBadge(assignment.status)}
-                        {isUrgent && (
-                          <Badge variant="destructive" className="text-xs">
-                            Urgent
-                          </Badge>
+              return (
+                <Card key={assignment._id} className={isUrgent ? "border-red-200 bg-red-50/50" : ""}>
+                  <CardContent className="p-6">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <Link href={`/classrooms/assignments/${assignment._id}`}>
+                            <h3 className="text-lg font-semibold hover:text-primary cursor-pointer text-balance">
+                              {assignment.title}
+                            </h3>
+                          </Link>
+                          {statusBadge(status)}
+                          {assignment.course?.code && (
+                            <Badge variant="outline">{assignment.course.code}</Badge>
+                          )}
+                          {isUrgent && (
+                            <Badge variant="destructive" className="text-xs">
+                              Urgent
+                            </Badge>
+                          )}
+                        </div>
+                        {assignment.description && (
+                          <p className="text-muted-foreground mb-3 text-pretty">{assignment.description}</p>
                         )}
                       </div>
-                      <p className="text-muted-foreground mb-3 text-pretty">{assignment.description}</p>
+                      <div className="text-right ml-4">
+                        <p className="text-sm font-medium">{assignment.points} points</p>
+                        {submission?.score != null && (
+                          <p className="text-sm text-green-600">
+                            {submission.score}/{assignment.points}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    <div className="text-right ml-4">
-                      <p className="text-sm font-medium">{assignment.points} points</p>
-                      {assignment.grade && (
-                        <p className="text-sm text-green-600">
-                          {assignment.grade}/{assignment.points}
-                        </p>
-                      )}
-                    </div>
-                  </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                    <div className="flex items-center gap-2 text-sm">
-                      <Calendar className="h-4 w-4 text-muted-foreground" />
-                      <span>Due: {new Date(assignment.dueDate).toLocaleDateString()}</span>
-                      <span className="text-muted-foreground">at {assignment.dueTime}</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-sm">
-                      <Clock className="h-4 w-4 text-muted-foreground" />
-                      <span className={getStatusColor(assignment.status)}>
-                        {daysUntilDue > 0
-                          ? `${daysUntilDue} days left`
-                          : daysUntilDue === 0
-                            ? "Due today"
-                            : `${Math.abs(daysUntilDue)} days overdue`}
-                      </span>
-                    </div>
-                    {assignment.submittedAt && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                       <div className="flex items-center gap-2 text-sm">
-                        <CheckCircle className="h-4 w-4 text-green-500" />
-                        <span>Submitted: {assignment.submittedAt}</span>
+                        <Calendar className="h-4 w-4 text-muted-foreground" />
+                        <span>Due: {new Date(assignment.dueDate).toLocaleDateString()}</span>
                       </div>
-                    )}
-                  </div>
-
-                  {assignment.attachments.length > 0 && (
-                    <div className="mb-4">
-                      <p className="text-sm font-medium mb-2">Assignment Files:</p>
-                      <div className="flex flex-wrap gap-2">
-                        {assignment.attachments.map((file, index) => (
-                          <Button key={index} variant="outline" size="sm" onClick={() => handleDownload(file)}>
-                            <Download className="h-3 w-3 mr-1" />
-                            {file}
-                          </Button>
-                        ))}
+                      <div className="flex items-center gap-2 text-sm">
+                        <Clock className="h-4 w-4 text-muted-foreground" />
+                        <span>
+                          {left > 0 ? `${left} days left` : left === 0 ? "Due today" : `${Math.abs(left)} days overdue`}
+                        </span>
                       </div>
-                    </div>
-                  )}
-
-                  {assignment.submissionFiles.length > 0 && (
-                    <div className="mb-4">
-                      <p className="text-sm font-medium mb-2">Your Submissions:</p>
-                      <div className="flex flex-wrap gap-2">
-                        {assignment.submissionFiles.map((file, index) => (
-                          <Button key={index} variant="outline" size="sm" onClick={() => handleViewFile(file)}>
-                            <Eye className="h-3 w-3 mr-1" />
-                            {file}
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {assignment.feedback && (
-                    <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                      <p className="text-sm font-medium text-blue-800 mb-1">Teacher Feedback:</p>
-                      <p className="text-sm text-blue-700">{assignment.feedback}</p>
-                    </div>
-                  )}
-
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      {assignment.status === "submitted" ? (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => router.push(`/classrooms/assignments/${assignment.id}/submission`)}
-                        >
-                          <Eye className="h-4 w-4 mr-2" />
-                          View Submission
-                        </Button>
-                      ) : (
-                        <Link href={`/classrooms/assignments/${assignment.id}`}>
-                          <Button size="sm">
-                            <Upload className="h-4 w-4 mr-2" />
-                            {assignment.status === "not-started" ? "Start Assignment" : "Continue Work"}
-                          </Button>
-                        </Link>
-                      )}
-                    </div>
-                    <div className="text-right">
-                      {assignment.status !== "submitted" && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-muted-foreground">Progress:</span>
-                          <Progress value={assignment.status === "in-progress" ? 50 : 0} className="w-20 h-2" />
+                      {submission?.submittedAt && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <CheckCircle className="h-4 w-4 text-green-500" />
+                          <span>Submitted {new Date(submission.submittedAt).toLocaleDateString()}</span>
                         </div>
                       )}
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
+
+                    {submission?.feedback && (
+                      <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <p className="text-sm font-medium text-blue-800 mb-1">Teacher Feedback:</p>
+                        <p className="text-sm text-blue-700">{submission.feedback}</p>
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2">
+                      {isTeacher || isAdmin ? (
+                        <Link href={`/classrooms/assignments/${assignment._id}/grade`}>
+                          <Button size="sm">
+                            <CheckCircle className="h-4 w-4 mr-2" />
+                            Grade submissions
+                          </Button>
+                        </Link>
+                      ) : status === "submitted" || status === "graded" ? (
+                        <Link href={`/classrooms/assignments/${assignment._id}`}>
+                          <Button variant="outline" size="sm">
+                            <Eye className="h-4 w-4 mr-2" />
+                            View Submission
+                          </Button>
+                        </Link>
+                      ) : (
+                        <Link href={`/classrooms/assignments/${assignment._id}`}>
+                          <Button size="sm">
+                            <Upload className="h-4 w-4 mr-2" />
+                            {status === "not-started" ? "Start Assignment" : "Continue Work"}
+                          </Button>
+                        </Link>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </AsyncState>
         </TabsContent>
       </Tabs>
     </div>

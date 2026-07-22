@@ -2,6 +2,8 @@
 
 import Image from "next/image"
 import { Search, User, Mail } from "lucide-react"
+import { signOut, useSession } from "next-auth/react"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -21,6 +23,15 @@ export { CampusHeader }
 export default CampusHeader
 
 function CampusHeader() {
+  const router = useRouter()
+  const { data: session } = useSession()
+  const user = session?.user
+
+  /** Clears the session cookie, then returns to the sign-in page. */
+  const handleSignOut = () => {
+    void signOut({ callbackUrl: "/signin" })
+  }
+
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200 shadow-sm">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -73,16 +84,16 @@ function CampusHeader() {
               <DropdownMenuContent className="w-56" align="end" forceMount>
                 <DropdownMenuLabel className="font-normal">
                   <div className="flex flex-col space-y-1">
-                    <p className="text-sm font-medium leading-none">Campus User</p>
-                    <p className="text-xs leading-none text-muted-foreground">user@maatk12.edu</p>
+                    <p className="text-sm font-medium leading-none">{user?.name ?? "Signed in"}</p>
+                    <p className="text-xs leading-none text-muted-foreground">{user?.email ?? ""}</p>
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>Profile Settings</DropdownMenuItem>
-                <DropdownMenuItem>My Studies</DropdownMenuItem>
-                <DropdownMenuItem>Account Settings</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => router.push("/profile")}>Profile Settings</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => router.push("/courses")}>My Studies</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => router.push("/settings")}>Account Settings</DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem>Sign Out</DropdownMenuItem>
+                <DropdownMenuItem onClick={handleSignOut}>Sign Out</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>

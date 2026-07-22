@@ -1,0 +1,26 @@
+# Caddy obtains and renews a Let's Encrypt certificate automatically, provided
+# the domain's DNS A record already points at this server and ports 80/443 are
+# open. No certbot, no cron renewal.
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# The app is only reachable through this proxy — it publishes no host port.
+	reverse_proxy app:3000
+
+	# Sent on every response. HSTS is deliberately omitted: it is hard to undo
+	# if you later need plain HTTP on this domain. Add it once you are certain.
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+
+	log {
+		output file /data/access.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+	}
+}

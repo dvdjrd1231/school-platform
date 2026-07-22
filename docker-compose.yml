@@ -1,0 +1,79 @@
+# Production stack: Next.js app + MongoDB + Caddy (automatic HTTPS).
+#
+#   docker compose up -d --build
+#
+# Values come from .env in this directory (see .env.example). That file is
+# gitignored and must never be committed.
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+    volumes:
+      - mongo-data:/data/db
+    # Deliberately no `ports:` — the database is reachable only from the
+    # compose network, never from the public internet.
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks: [internal]
+
+  app:
+    build:
+      context: .
+      args:
+        # Inlined into the client bundle at build time — see the Dockerfile.
+        NEXT_PUBLIC_PUSHER_KEY: ${NEXT_PUBLIC_PUSHER_KEY:-}
+        NEXT_PUBLIC_PUSHER_CLUSTER: ${NEXT_PUBLIC_PUSHER_CLUSTER:-}
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      # authSource=admin because the user is created in the admin database.
+      MONGODB_URI: mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@mongo:27017/school-platform?authSource=admin
+      AUTH_SECRET: ${AUTH_SECRET}
+      AUTH_TRUST_HOST: "true"
+      # Set APP_URL explicitly when serving over plain HTTP or a bare IP
+      # (e.g. http://203.0.113.10). It defaults to https://DOMAIN for the
+      # normal domain + TLS case.
+      NEXTAUTH_URL: ${APP_URL:-https://${DOMAIN}}
+      ADMIN_USER: ${ADMIN_USER}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      ADMIN_NAME: ${ADMIN_NAME:-Administrator}
+      PUSHER_APP_ID: ${PUSHER_APP_ID:-}
+      PUSHER_KEY: ${PUSHER_KEY:-}
+      PUSHER_SECRET: ${PUSHER_SECRET:-}
+      PUSHER_CLUSTER: ${PUSHER_CLUSTER:-}
+    # Not published to the host either; Caddy is the only way in.
+    networks: [internal, web]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data     # certificates — losing this re-requests them
+      - caddy-config:/config
+    depends_on: [app]
+    networks: [web]
+
+volumes:
+  mongo-data:
+  caddy-data:
+  caddy-config:
+
+networks:
+  internal:
+  web:

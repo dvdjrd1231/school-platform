@@ -2,17 +2,17 @@ import { Sidebar } from "@/components/layout/sidebar"
 import { ModuleContent } from "@/components/content/module-content"
 
 interface ModulePageProps {
-  params: {
-    moduleId: string
-  }
+  params: Promise<{ moduleId: string }>
 }
 
-export default function ModulePage({ params }: ModulePageProps) {
+export default async function ModulePage({ params }: ModulePageProps) {
+  const { moduleId } = await params
+
   return (
     <div className="flex w-full">
       <Sidebar />
       <div className="flex-1">
-        <ModuleContent moduleId={params.moduleId} />
+        <ModuleContent moduleId={moduleId} />
       </div>
     </div>
   )

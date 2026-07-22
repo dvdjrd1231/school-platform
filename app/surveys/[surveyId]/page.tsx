@@ -18,7 +18,7 @@ interface SurveyQuestion {
   required: boolean
 }
 
-export default function SurveyDetailPage({ params }: { params: { surveyId: string } }) {
+export default function SurveyDetailPage({ params }: { params: Promise<{ surveyId: string }> }) {
   const router = useRouter()
   const [currentQuestion, setCurrentQuestion] = useState(0)
   const [answers, setAnswers] = useState<Record<number, string>>({})
@@ -26,7 +26,7 @@ export default function SurveyDetailPage({ params }: { params: { surveyId: strin
 
   // Mock survey data - in real app, fetch based on surveyId
   const survey = {
-    id: params.surveyId,
+    id: surveyId,
     title: "Course Feedback Survey",
     description: "Help us improve the course content and delivery",
     estimatedTime: 5,

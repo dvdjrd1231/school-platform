@@ -18,8 +18,9 @@ const registerSchema = z.object({
  * Public student self-registration.
  *
  * Deliberately does NOT accept a `roles` field — otherwise anyone could POST
- * `{"roles":["admin"]}` and grant themselves admin. Staff accounts are created
- * by an admin via POST /api/users.
+ * `{"roles":["admin"]}` and grant themselves admin. Admin accounts come from
+ * the ADMIN_USER / ADMIN_PASSWORD environment variables (see lib/auth/
+ * ensure-admin.ts); other staff are created by an admin via POST /api/users.
  */
 export async function POST(req: Request) {
   try {

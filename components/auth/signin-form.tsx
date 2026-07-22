@@ -4,8 +4,10 @@ import type React from "react"
 
 import { useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { signIn } from "next-auth/react"
+import { signIn, getSession } from "next-auth/react"
 import Link from "next/link"
+
+import { landingPathForRoles } from "@/lib/auth/landing"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -29,7 +31,6 @@ export function SignInForm() {
 
   const router = useRouter()
   const searchParams = useSearchParams()
-  const callbackUrl = searchParams.get("callbackUrl") ?? "/"
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -49,7 +50,16 @@ export function SignInForm() {
         return
       }
 
-      router.push(callbackUrl)
+      // If the user was redirected here from a protected page, honour that
+      // destination. Otherwise route by role: the session is now established,
+      // so getSession() returns the freshly signed-in user's roles.
+      let destination = searchParams.get("callbackUrl")
+      if (!destination) {
+        const session = await getSession()
+        destination = landingPathForRoles(session?.user?.roles)
+      }
+
+      router.push(destination)
       // Pull the new session into client components that already mounted.
       router.refresh()
     } catch {

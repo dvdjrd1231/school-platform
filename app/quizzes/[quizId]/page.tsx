@@ -2,17 +2,17 @@ import { Sidebar } from "@/components/layout/sidebar"
 import { QuizTaking } from "@/components/quizzes/quiz-taking"
 
 interface QuizTakingPageProps {
-  params: {
-    quizId: string
-  }
+  params: Promise<{ quizId: string }>
 }
 
-export default function QuizTakingPage({ params }: QuizTakingPageProps) {
+export default async function QuizTakingPage({ params }: QuizTakingPageProps) {
+  const { quizId } = await params
+
   return (
     <div className="flex w-full">
       <Sidebar />
       <div className="flex-1">
-        <QuizTaking quizId={params.quizId} />
+        <QuizTaking quizId={quizId} />
       </div>
     </div>
   )

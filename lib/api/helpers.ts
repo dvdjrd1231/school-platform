@@ -3,7 +3,7 @@ import { ZodError, type ZodSchema } from "zod"
 import mongoose from "mongoose"
 
 import { auth } from "@/lib/auth"
-import { connectDB } from "@/lib/db/connect"
+import { connectDB, redactUri } from "@/lib/db/connect"
 import type { UserRole } from "@/lib/models/User"
 
 export interface SessionUser {
@@ -91,8 +91,31 @@ export function handleErrors(err: unknown): NextResponse {
     return NextResponse.json({ error: "That record already exists" }, { status: 409 })
   }
 
+  // Deployment/configuration faults are reported explicitly rather than as a
+  // generic 500. They contain no user data, and "Internal server error" gives
+  // an operator nothing to act on. Credentials are redacted first.
+  if (isConfigurationError(err)) {
+    const detail = redactUri(err instanceof Error ? err.message : String(err))
+    console.error("[api] Configuration error:", detail)
+    return NextResponse.json(
+      { error: `Server is not configured correctly: ${detail}`, hint: "GET /api/health" },
+      { status: 503 },
+    )
+  }
+
   console.error("[api] Unhandled error:", err)
   return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+}
+
+function isConfigurationError(err: unknown): boolean {
+  if (err instanceof mongoose.Error.MongooseServerSelectionError) return true
+  if (!(err instanceof Error)) return false
+  return (
+    err.message.includes("No MongoDB connection string") ||
+    err.message.includes("MONGODB_URI") ||
+    // Auth.js throws this when AUTH_SECRET is absent.
+    err.name === "MissingSecret"
+  )
 }
 
 export function json<T>(data: T, status = 200): NextResponse {

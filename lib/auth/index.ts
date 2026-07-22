@@ -1,15 +1,10 @@
 import NextAuth from "next-auth"
 import Credentials from "next-auth/providers/credentials"
-import { z } from "zod"
 
 import { authConfig } from "./config"
+import { ensureEnvAdmin } from "./ensure-admin"
+import { verifyCredentials } from "./verify-credentials"
 import { connectDB } from "@/lib/db/connect"
-import { User } from "@/lib/models"
-
-const credentialsSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(1),
-})
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
@@ -20,30 +15,21 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         password: { label: "Password", type: "password" },
       },
       async authorize(raw) {
-        const parsed = credentialsSchema.safeParse(raw)
-        if (!parsed.success) return null
-
-        const { email, password } = parsed.data
         await connectDB()
 
-        // passwordHash is select:false on the schema, so request it explicitly.
-        const user = await User.findOne({ email: email.toLowerCase() }).select("+passwordHash")
-
-        // Return null for every failure case without distinguishing between
-        // "no such user" and "wrong password" — telling them apart lets an
-        // attacker enumerate valid accounts.
-        if (!user || user.status !== "active") return null
-
-        const valid = await user.comparePassword(password)
-        if (!valid) return null
-
-        return {
-          id: user._id.toString(),
-          name: user.name,
-          email: user.email,
-          image: user.avatar ?? null,
-          roles: user.roles,
+        // Ensure the env-configured bootstrap admin exists before we verify, so
+        // ADMIN_USER / ADMIN_PASSWORD can sign in on a fresh database with no
+        // seeding step. Wrapped so a bootstrap failure logs the real cause but
+        // does not throw out of authorize — an uncaught throw here surfaces to
+        // the browser as the opaque "error=Configuration" page and blocks every
+        // login, including already-seeded accounts.
+        try {
+          await ensureEnvAdmin()
+        } catch (err) {
+          console.error("[auth] ensureEnvAdmin failed:", err)
         }
+
+        return verifyCredentials(raw)
       },
     }),
   ],

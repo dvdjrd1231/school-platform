@@ -10,6 +10,12 @@ import type { UserRole } from "@/lib/models/User"
  * `middleware.ts` work at all.
  */
 export const authConfig = {
+  // Vercel serves each git branch and preview from its own *.vercel.app host.
+  // NextAuth v5 rejects requests from hosts it doesn't recognise (an
+  // UntrustedHost error, which surfaces as the generic "Configuration" error
+  // page). Trusting the host lets auth work on preview URLs as well as the
+  // production domain, without hard-coding a single URL.
+  trustHost: true,
   pages: {
     signIn: "/signin",
   },
@@ -17,8 +23,14 @@ export const authConfig = {
   callbacks: {
     jwt({ token, user }) {
       if (user) {
-        token.id = user.id as string
-        token.roles = (user as { roles?: UserRole[] }).roles ?? ["student"]
+        token.id = String(user.id)
+        // Everything placed on the token must survive structuredClone during
+        // JWT encoding, so normalise to plain strings rather than trusting the
+        // shape handed in (a Mongoose array here breaks encoding entirely).
+        const roles = (user as { roles?: UserRole[] }).roles
+        token.roles = Array.isArray(roles) && roles.length > 0
+          ? roles.map((role) => String(role) as UserRole)
+          : (["student"] as UserRole[])
       }
       return token
     },

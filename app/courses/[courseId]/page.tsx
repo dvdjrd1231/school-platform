@@ -3,13 +3,13 @@ import { getCourseById, getModulesByCourse } from "@/lib/database"
 import CourseModules from "@/components/courses/course-modules"
 
 interface CoursePageProps {
-  params: {
-    courseId: string
-  }
+  params: Promise<{ courseId: string }>
 }
 
-export default function CoursePage({ params }: CoursePageProps) {
-  const course = getCourseById(params.courseId)
+export default async function CoursePage({ params }: CoursePageProps) {
+  const { courseId } = await params
+
+  const course = getCourseById(courseId)
 
   if (!course) {
     notFound()

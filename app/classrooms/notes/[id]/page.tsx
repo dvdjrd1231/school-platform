@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { ArrowLeft, Save, Calendar, Tag } from "lucide-react"
 import { useRouter } from "next/navigation"
 
-export default function EditNotePage({ params }: { params: { id: string } }) {
+export default function EditNotePage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter()
   const [note, setNote] = useState({
     title: "Linear Equations Notes",

@@ -16,8 +16,10 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files
+# env files — real secrets never get committed...
 .env*
+# ...but the template documenting which variables exist must be.
+!.env.example
 
 # vercel
 .vercel

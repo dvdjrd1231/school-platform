@@ -2,17 +2,17 @@ import { Sidebar } from "@/components/layout/sidebar"
 import { DiscussionPost } from "@/components/discussions/discussion-post"
 
 interface DiscussionPostPageProps {
-  params: {
-    postId: string
-  }
+  params: Promise<{ postId: string }>
 }
 
-export default function DiscussionPostPage({ params }: DiscussionPostPageProps) {
+export default async function DiscussionPostPage({ params }: DiscussionPostPageProps) {
+  const { postId } = await params
+
   return (
     <div className="flex w-full">
       <Sidebar />
       <div className="flex-1">
-        <DiscussionPost postId={params.postId} />
+        <DiscussionPost postId={postId} />
       </div>
     </div>
   )
