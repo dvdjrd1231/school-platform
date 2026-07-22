@@ -60,6 +60,13 @@ export async function GET() {
   // without needing access to the server logs.
   const adminBootstrap: { ok: boolean; error?: string; adminExists?: boolean } = { ok: false }
   try {
+    // Skip when the database is unreachable: the bootstrap would fail with a
+    // confusing "cannot call findOne() before initial connection" that hides
+    // the real problem reported in `database.error`.
+    if (!database.connected) {
+      adminBootstrap.error = "skipped — no database connection"
+      throw new Error(adminBootstrap.error)
+    }
     await ensureEnvAdmin()
     adminBootstrap.ok = true
     if (database.connected && process.env.ADMIN_USER) {
@@ -89,7 +96,9 @@ export async function GET() {
   if (env.ADMIN_USER && !env.ADMIN_PASSWORD) {
     problems.push("ADMIN_USER is set but ADMIN_PASSWORD is missing.")
   }
-  if (adminBootstrap.error) {
+  // Only worth reporting when the database is up; otherwise it's a symptom of
+  // the connection failure already listed above.
+  if (adminBootstrap.error && database.connected) {
     problems.push(`Admin bootstrap failed: ${adminBootstrap.error}`)
   }
   if (env.ADMIN_USER && env.ADMIN_PASSWORD && adminBootstrap.ok && adminBootstrap.adminExists === false) {

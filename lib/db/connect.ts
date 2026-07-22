@@ -58,6 +58,15 @@ export async function connectDB(): Promise<typeof mongoose> {
   }
 
   if (!cached.promise) {
+    // Credentials are passed as options rather than embedded in the URI.
+    // A password containing /, @, :, + or = — which `openssl rand -base64`
+    // routinely produces — makes an interpolated URI unparseable ("Invalid
+    // connection string"). Supplying them separately sidesteps percent-encoding
+    // entirely. Falls back to whatever the URI carries when unset, so an Atlas
+    // string with inline credentials keeps working.
+    const username = process.env.MONGODB_USER
+    const password = process.env.MONGODB_PASSWORD
+
     cached.promise = mongoose.connect(uri, {
       // A connection string from an integration often has no database in its
       // path, in which case Mongoose silently uses "test". Name it explicitly
@@ -68,6 +77,12 @@ export async function connectDB(): Promise<typeof mongoose> {
       // bufferCommands queues operations while disconnected, which hides
       // connection failures behind confusing timeouts. Surface them instead.
       bufferCommands: false,
+      ...(username && password
+        ? {
+            auth: { username, password },
+            authSource: process.env.MONGODB_AUTH_SOURCE || "admin",
+          }
+        : {}),
     })
   }
 

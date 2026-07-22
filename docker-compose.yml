@@ -40,7 +40,12 @@ services:
         condition: service_healthy
     environment:
       # authSource=admin because the user is created in the admin database.
-      MONGODB_URI: mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@mongo:27017/school-platform?authSource=admin
+      # Credentials go in their own variables, never interpolated into the URI:
+      # a password containing / @ : + = would make the URI unparseable.
+      MONGODB_URI: mongodb://mongo:27017/school-platform
+      MONGODB_USER: ${MONGO_ROOT_USER}
+      MONGODB_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGODB_AUTH_SOURCE: admin
       AUTH_SECRET: ${AUTH_SECRET:?generate one with `openssl rand -base64 32` and set AUTH_SECRET in .env}
       AUTH_TRUST_HOST: "true"
       # Set APP_URL explicitly when serving over plain HTTP or a bare IP
