@@ -316,6 +316,13 @@ Check `docker compose logs caddy`. Usually one of:
 - ports 80/443 are blocked — `sudo ufw status`, plus any provider-level firewall
 - `DOMAIN` in `.env` doesn't exactly match the DNS name
 
+**Logs repeat `TypeError: Invalid URL` with `input: 'https://'`**
+`DOMAIN` is missing or empty in `.env`, so `NEXTAUTH_URL` became the bare
+string `https://`. Set `DOMAIN` (a hostname, or `:80` plus
+`APP_URL=http://YOUR_SERVER_IP` when testing without a domain) and run
+`docker compose up -d`. Compose now refuses to start when a required value is
+missing, so this should surface as a clear message rather than a runtime crash.
+
 **`/api/health` shows `"connected": false`**
 Look at `docker compose logs mongo`. Usually `MONGO_ROOT_USER` /
 `MONGO_ROOT_PASSWORD` were changed *after* the volume was first created — the
