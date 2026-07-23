@@ -8,6 +8,8 @@ import {
   Enrollment,
   Message,
   Notification,
+  Skill,
+  SkillAssessment,
   Submission,
   User,
   hashPassword,
@@ -47,6 +49,8 @@ export async function seedDatabase(options: { reset?: boolean } = {}): Promise<S
       Conversation.deleteMany({}),
       Message.deleteMany({}),
       Notification.deleteMany({}),
+      Skill.deleteMany({}),
+      SkillAssessment.deleteMany({}),
     ])
   }
 
@@ -208,6 +212,33 @@ export async function seedDatabase(options: { reset?: boolean } = {}): Promise<S
     { conversation: conversation._id, sender: parent._id, body: "Thank you for the update — we'll work on it at home.", readBy: [parent._id] },
   ])
 
+  // ---- Skills / standards catalog (sample 10th-grade Common Core) ---------
+  // A representative slice only — an administrator adds the full standards set
+  // for each grade through the Skills management screen.
+  const skills = await Skill.create([
+    { name: "Interpret linear functions", category: "Mathematics", subject: "Mathematics", gradeLevel: "10th", standardCode: "CCSS.MATH.HSF.IF.B.4", framework: "Common Core", description: "Interpret key features of graphs and tables for a function.", order: 1 },
+    { name: "Solve quadratic equations", category: "Mathematics", subject: "Mathematics", gradeLevel: "10th", standardCode: "CCSS.MATH.HSA.REI.B.4", framework: "Common Core", description: "Solve quadratic equations in one variable.", order: 2 },
+    { name: "Prove geometric theorems", category: "Mathematics", subject: "Mathematics", gradeLevel: "10th", standardCode: "CCSS.MATH.HSG.CO.C.9", framework: "Common Core", description: "Prove theorems about lines and angles.", order: 3 },
+    { name: "Cite textual evidence", category: "English Language Arts", subject: "English", gradeLevel: "10th", standardCode: "CCSS.ELA.RL.9-10.1", framework: "Common Core", description: "Cite strong and thorough textual evidence to support analysis.", order: 1 },
+    { name: "Determine theme", category: "English Language Arts", subject: "English", gradeLevel: "10th", standardCode: "CCSS.ELA.RL.9-10.2", framework: "Common Core", description: "Determine a theme and analyze its development over the text.", order: 2 },
+    { name: "Write arguments", category: "English Language Arts", subject: "English", gradeLevel: "10th", standardCode: "CCSS.ELA.W.9-10.1", framework: "Common Core", description: "Write arguments to support claims with valid reasoning.", order: 3 },
+    { name: "Analyze scientific data", category: "Science", subject: "Science", gradeLevel: "10th", standardCode: "NGSS.HS-LS1-3", framework: "NGSS", description: "Plan and conduct an investigation to provide evidence of homeostasis.", order: 1 },
+    { name: "Collaboration", category: "Life Skills", gradeLevel: "10th", framework: "School", description: "Works effectively within a team toward shared goals.", order: 1 },
+    { name: "Critical thinking", category: "Life Skills", gradeLevel: "10th", framework: "School", description: "Evaluates evidence and reasoning to reach sound conclusions.", order: 2 },
+  ])
+
+  // Assess John Smith (10th grade) on most of them, leaving some not-assessed.
+  const levels = ["mastered", "advanced", "proficient", "proficient", "advanced", "developing", "proficient", "advanced"] as const
+  await SkillAssessment.insertMany(
+    skills.slice(0, levels.length).map((skill, i) => ({
+      student: students[0]._id,
+      skill: skill._id,
+      level: levels[i],
+      assessedBy: teacherMath._id,
+      assessedAt: new Date(),
+    })),
+  )
+
   return {
     seeded: true,
     counts: {
@@ -217,6 +248,7 @@ export async function seedDatabase(options: { reset?: boolean } = {}): Promise<S
       assignments: assignments.length,
       submissions: submissions.length,
       conversations: 1,
+      skills: skills.length,
     },
     accounts: [
       { email: "admin@maatk12.edu", role: "admin" },

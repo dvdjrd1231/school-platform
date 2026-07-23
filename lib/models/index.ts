@@ -11,3 +11,11 @@ export { Submission, type ISubmission } from "./Submission"
 export { Conversation, type IConversation } from "./Conversation"
 export { Message, type IMessage } from "./Message"
 export { Notification, type INotification } from "./Notification"
+export { Skill, type ISkill } from "./Skill"
+export {
+  SkillAssessment,
+  SKILL_LEVELS,
+  LEVEL_PERCENT,
+  type ISkillAssessment,
+  type SkillLevel,
+} from "./SkillAssessment"

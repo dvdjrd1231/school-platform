@@ -19,6 +19,7 @@ import {
   Home,
   GraduationCap,
   TrendingUp,
+  Target,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -84,6 +85,7 @@ const adminItems = [
   { title: "Class Management", href: "/admin/classes", icon: GraduationCap },
   { title: "Lesson Management", href: "/admin/lessons", icon: BookOpen },
   { title: "Grade Management", href: "/admin/grades", icon: BarChart3 },
+  { title: "Skills & Standards", href: "/admin/skills", icon: Target },
 ]
 
 export function Navigation() {
