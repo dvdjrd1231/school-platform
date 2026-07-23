@@ -59,12 +59,12 @@ export default function AdminDashboard() {
   const s = statsReq.data
 
   const tiles = [
-    { label: "Students", value: s?.totalStudents, icon: Users, color: "text-blue-600" },
-    { label: "Teachers", value: s?.totalTeachers, icon: GraduationCap, color: "text-green-600" },
-    { label: "Active Courses", value: s?.activeCourses, icon: BookOpen, color: "text-purple-600" },
-    { label: "Enrollments", value: s?.activeEnrollments, icon: Users, color: "text-emerald-600" },
-    { label: "Assignments", value: s?.publishedAssignments, icon: FileText, color: "text-orange-600" },
-    { label: "Awaiting grading", value: s?.pendingGrades, icon: ClipboardCheck, color: "text-red-600" },
+    { label: "Students", value: s?.totalStudents, icon: Users, color: "text-blue-600", bg: "bg-blue-50" },
+    { label: "Teachers", value: s?.totalTeachers, icon: GraduationCap, color: "text-green-600", bg: "bg-green-50" },
+    { label: "Active Courses", value: s?.activeCourses, icon: BookOpen, color: "text-purple-600", bg: "bg-purple-50" },
+    { label: "Enrollments", value: s?.activeEnrollments, icon: Users, color: "text-emerald-600", bg: "bg-emerald-50" },
+    { label: "Assignments", value: s?.publishedAssignments, icon: FileText, color: "text-orange-600", bg: "bg-orange-50" },
+    { label: "Awaiting grading", value: s?.pendingGrades, icon: ClipboardCheck, color: "text-red-600", bg: "bg-red-50" },
   ]
 
   const quickActions = [
@@ -91,14 +91,14 @@ export default function AdminDashboard() {
           {tiles.map((t) => {
             const Icon = t.icon
             return (
-              <Card key={t.label}>
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-600">{t.label}</p>
-                      <p className={`text-2xl font-bold ${t.color}`}>{t.value ?? "—"}</p>
-                    </div>
+              <Card key={t.label} className="border-none shadow-sm transition-shadow hover:shadow-md">
+                <CardContent className="flex flex-col gap-3 p-5">
+                  <span className={`inline-flex h-10 w-10 items-center justify-center rounded-xl ${t.bg}`}>
                     <Icon className={`h-5 w-5 ${t.color}`} />
+                  </span>
+                  <div>
+                    <p className="text-3xl font-bold tracking-tight">{t.value ?? "—"}</p>
+                    <p className="text-sm text-muted-foreground">{t.label}</p>
                   </div>
                 </CardContent>
               </Card>
