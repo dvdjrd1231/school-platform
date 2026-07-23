@@ -83,7 +83,7 @@ const adminItems = [
   { title: "User Management", href: "/admin/users", icon: Users },
   { title: "Class Management", href: "/admin/classes", icon: GraduationCap },
   { title: "Lesson Management", href: "/admin/lessons", icon: BookOpen },
-  { title: "Grade Management", href: "/admin/grade-management", icon: BarChart3 },
+  { title: "Grade Management", href: "/admin/grades", icon: BarChart3 },
 ]
 
 export function Navigation() {
