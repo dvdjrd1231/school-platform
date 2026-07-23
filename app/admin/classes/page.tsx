@@ -34,6 +34,7 @@ interface Course {
   title: string
   subject: string
   status: string
+  description?: string
   schedule?: string
   room?: string
   maxStudents?: number
@@ -67,6 +68,8 @@ export default function ClassManagement() {
   const [open, setOpen] = useState(false)
   // null → the dialog is creating; an id → it is editing that course.
   const [editingId, setEditingId] = useState<string | null>(null)
+  // The course shown in the read-only view modal, or null when closed.
+  const [viewing, setViewing] = useState<Course | null>(null)
   const [form, setForm] = useState(EMPTY)
   const [formError, setFormError] = useState("")
   const [saving, setSaving] = useState(false)
@@ -383,7 +386,7 @@ export default function ClassManagement() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => router.push(`/courses/${c._id}`)}>
+                          <DropdownMenuItem onClick={() => setViewing(c)}>
                             <Eye className="h-4 w-4 mr-2" />
                             View
                           </DropdownMenuItem>
@@ -407,6 +410,81 @@ export default function ClassManagement() {
           </AsyncState>
         </CardContent>
       </Card>
+
+      {/* Read-only detail view. Editing is a separate action (the Edit menu item). */}
+      <Dialog open={!!viewing} onOpenChange={(o) => !o && setViewing(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{viewing?.title}</DialogTitle>
+            <DialogDescription>{viewing?.code}</DialogDescription>
+          </DialogHeader>
+          {viewing && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Badge
+                  className={
+                    viewing.status === "active"
+                      ? "bg-green-100 text-green-800"
+                      : viewing.status === "archived"
+                        ? "bg-gray-100 text-gray-700"
+                        : "bg-blue-100 text-blue-800"
+                  }
+                >
+                  {viewing.status}
+                </Badge>
+                <span className="text-sm text-muted-foreground">{viewing.subject}</span>
+              </div>
+
+              {viewing.description && (
+                <p className="text-sm text-muted-foreground">{viewing.description}</p>
+              )}
+
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                <div>
+                  <dt className="text-muted-foreground">Instructor</dt>
+                  <dd className="font-medium">{viewing.instructor?.name ?? "Unassigned"}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Enrolled</dt>
+                  <dd className="font-medium tabular-nums">
+                    {viewing.enrolledCount ?? 0}
+                    {viewing.maxStudents ? ` / ${viewing.maxStudents}` : ""}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Schedule</dt>
+                  <dd className="font-medium">{viewing.schedule ?? "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Room</dt>
+                  <dd className="font-medium">{viewing.room ?? "—"}</dd>
+                </div>
+              </dl>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setViewing(null)}>
+              Close
+            </Button>
+            {viewing && (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    const c = viewing
+                    setViewing(null)
+                    openEdit(c)
+                  }}
+                >
+                  <Pencil className="h-4 w-4 mr-2" />
+                  Edit
+                </Button>
+                <Button onClick={() => router.push(`/courses/${viewing._id}`)}>Open full page</Button>
+              </>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
