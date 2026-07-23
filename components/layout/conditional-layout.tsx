@@ -29,12 +29,18 @@ export function ConditionalLayout({ children }: ConditionalLayoutProps) {
 
   const isCampusRoute = pathname === "/" || pathname.startsWith("/campus")
 
+  // A single centered container is the source of truth for page width. It was
+  // previously `flex`, which collapsed each page to its content width and stuck
+  // it to the left (the empty right-hand gap). `mx-auto` + a max width centers
+  // every page on large screens; `w-full` keeps it responsive on small ones.
+  const mainClass = "mx-auto w-full max-w-[1400px]"
+
   if (isCampusRoute) {
     return (
       <>
         <CampusHeader />
         <CampusNavigation />
-        <main className="flex">{children}</main>
+        <main className={mainClass}>{children}</main>
       </>
     )
   }
@@ -43,7 +49,7 @@ export function ConditionalLayout({ children }: ConditionalLayoutProps) {
     <>
       <Header />
       <Navigation />
-      <main className="flex">{children}</main>
+      <main className={mainClass}>{children}</main>
     </>
   )
 }
