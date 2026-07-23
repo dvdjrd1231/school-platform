@@ -2,12 +2,13 @@
 
 import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Search, Plus, MoreHorizontal, Archive, Loader2, Users } from "lucide-react"
+import { Search, Plus, MoreHorizontal, Archive, Loader2, Users, GraduationCap, BookOpen } from "lucide-react"
 
 import { useRole } from "@/components/context/role-context"
 import { useApi } from "@/hooks/use-api"
 import { apiMutate } from "@/lib/api/client"
 import { AsyncState } from "@/components/ui/async-state"
+import { StatTile } from "@/components/admin/stat-tile"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -75,6 +76,14 @@ export default function ClassManagement() {
   const teachers = teachersReq.data?.users ?? []
 
   const subjects = useMemo(() => Array.from(new Set(courses.map((c) => c.subject))).sort(), [courses])
+  const stats = useMemo(
+    () => ({
+      total: courses.length,
+      active: courses.filter((c) => c.status === "active").length,
+      enrolled: courses.reduce((sum, c) => sum + (c.enrolledCount ?? 0), 0),
+    }),
+    [courses],
+  )
 
   const filtered = courses.filter((c) => {
     const term = search.toLowerCase()
@@ -224,6 +233,12 @@ export default function ClassManagement() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <StatTile label="Total Classes" value={stats.total} icon={BookOpen} color="text-emerald-600" bg="bg-emerald-50" />
+        <StatTile label="Active" value={stats.active} icon={GraduationCap} color="text-blue-600" bg="bg-blue-50" />
+        <StatTile label="Students Enrolled" value={stats.enrolled} icon={Users} color="text-purple-600" bg="bg-purple-50" />
       </div>
 
       <div className="flex items-center gap-4">

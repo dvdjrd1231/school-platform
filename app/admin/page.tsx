@@ -13,6 +13,7 @@ import {
 
 import { useApi } from "@/hooks/use-api"
 import { AsyncState } from "@/components/ui/async-state"
+import { StatTile } from "@/components/admin/stat-tile"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 
@@ -88,22 +89,9 @@ export default function AdminDashboard() {
 
       <AsyncState isLoading={statsReq.isLoading} error={statsReq.error} onRetry={statsReq.refetch}>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          {tiles.map((t) => {
-            const Icon = t.icon
-            return (
-              <Card key={t.label} className="border-none shadow-sm transition-shadow hover:shadow-md">
-                <CardContent className="flex flex-col gap-3 p-5">
-                  <span className={`inline-flex h-10 w-10 items-center justify-center rounded-xl ${t.bg}`}>
-                    <Icon className={`h-5 w-5 ${t.color}`} />
-                  </span>
-                  <div>
-                    <p className="text-3xl font-bold tracking-tight">{t.value ?? "—"}</p>
-                    <p className="text-sm text-muted-foreground">{t.label}</p>
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
+          {tiles.map((t) => (
+            <StatTile key={t.label} {...t} />
+          ))}
         </div>
       </AsyncState>
 

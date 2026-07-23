@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { StatTile } from "@/components/admin/stat-tile"
 import {
   Users,
   Plus,
@@ -311,61 +312,11 @@ export default function UserManagement() {
 
       {/* User Statistics */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Total Users</p>
-                <p className="text-2xl font-bold text-emerald-600">{userStats.total}</p>
-              </div>
-              <Users className="h-6 w-6 text-emerald-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Students</p>
-                <p className="text-2xl font-bold text-blue-600">{userStats.students}</p>
-              </div>
-              <GraduationCap className="h-6 w-6 text-blue-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Teachers</p>
-                <p className="text-2xl font-bold text-green-600">{userStats.teachers}</p>
-              </div>
-              <UserCheck className="h-6 w-6 text-green-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Admins</p>
-                <p className="text-2xl font-bold text-purple-600">{userStats.admins}</p>
-              </div>
-              <Shield className="h-6 w-6 text-purple-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Active</p>
-                <p className="text-2xl font-bold text-green-600">{userStats.active}</p>
-              </div>
-              <UserCheck className="h-6 w-6 text-green-600" />
-            </div>
-          </CardContent>
-        </Card>
+        <StatTile label="Total Users" value={userStats.total} icon={Users} color="text-emerald-600" bg="bg-emerald-50" />
+        <StatTile label="Students" value={userStats.students} icon={GraduationCap} color="text-blue-600" bg="bg-blue-50" />
+        <StatTile label="Teachers" value={userStats.teachers} icon={UserCheck} color="text-green-600" bg="bg-green-50" />
+        <StatTile label="Admins" value={userStats.admins} icon={Shield} color="text-purple-600" bg="bg-purple-50" />
+        <StatTile label="Active" value={userStats.active} icon={UserCheck} color="text-green-600" bg="bg-green-50" />
       </div>
 
       {/* Search and Filter */}

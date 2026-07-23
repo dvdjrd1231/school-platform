@@ -1,10 +1,11 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Search } from "lucide-react"
+import { Search, ClipboardCheck, BarChart3, BookOpen } from "lucide-react"
 
 import { useApi } from "@/hooks/use-api"
 import { AsyncState } from "@/components/ui/async-state"
+import { StatTile } from "@/components/admin/stat-tile"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -67,28 +68,19 @@ export default function GradeManagement() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-sm text-gray-600">Graded submissions</p>
-            <p className="text-2xl font-bold text-emerald-600">{data?.summary.total ?? "—"}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-sm text-gray-600">Average grade</p>
-            <p className="text-2xl font-bold text-emerald-600">
-              {data?.summary.average !== null && data?.summary.average !== undefined
-                ? `${data.summary.average}%`
-                : "—"}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-sm text-gray-600">Courses</p>
-            <p className="text-2xl font-bold text-emerald-600">{courses.length}</p>
-          </CardContent>
-        </Card>
+        <StatTile label="Graded submissions" value={data?.summary.total ?? "—"} icon={ClipboardCheck} color="text-emerald-600" bg="bg-emerald-50" />
+        <StatTile
+          label="Average grade"
+          value={
+            data?.summary.average !== null && data?.summary.average !== undefined
+              ? `${data.summary.average}%`
+              : "—"
+          }
+          icon={BarChart3}
+          color="text-blue-600"
+          bg="bg-blue-50"
+        />
+        <StatTile label="Courses" value={courses.length} icon={BookOpen} color="text-purple-600" bg="bg-purple-50" />
       </div>
 
       <div className="flex items-center gap-4">

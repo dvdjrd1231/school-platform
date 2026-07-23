@@ -6,6 +6,7 @@ import { Search, Plus, Loader2, Video, BookOpen, FileText, ClipboardCheck, Puzzl
 import { useApi } from "@/hooks/use-api"
 import { apiMutate } from "@/lib/api/client"
 import { AsyncState } from "@/components/ui/async-state"
+import { StatTile } from "@/components/admin/stat-tile"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -209,19 +210,10 @@ export default function LessonManagement() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label: "Total Lessons", value: stats.total },
-          { label: "Video", value: stats.video },
-          { label: "Reading", value: stats.reading },
-          { label: "Interactive", value: stats.interactive },
-        ].map((t) => (
-          <Card key={t.label}>
-            <CardContent className="p-4">
-              <p className="text-sm text-gray-600">{t.label}</p>
-              <p className="text-2xl font-bold text-emerald-600">{t.value}</p>
-            </CardContent>
-          </Card>
-        ))}
+        <StatTile label="Total Lessons" value={stats.total} icon={BookOpen} color="text-emerald-600" bg="bg-emerald-50" />
+        <StatTile label="Video" value={stats.video} icon={Video} color="text-blue-600" bg="bg-blue-50" />
+        <StatTile label="Reading" value={stats.reading} icon={FileText} color="text-purple-600" bg="bg-purple-50" />
+        <StatTile label="Interactive" value={stats.interactive} icon={Puzzle} color="text-orange-600" bg="bg-orange-50" />
       </div>
 
       <div className="flex items-center gap-4">
