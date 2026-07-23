@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Search, Plus, MoreHorizontal, Archive, Loader2, Users, GraduationCap, BookOpen } from "lucide-react"
+import { Search, Plus, MoreHorizontal, Archive, Loader2, Users, GraduationCap, BookOpen, Eye, Pencil } from "lucide-react"
 
 import { useRole } from "@/components/context/role-context"
 import { useApi } from "@/hooks/use-api"
@@ -65,6 +65,8 @@ export default function ClassManagement() {
   const [search, setSearch] = useState("")
   const [subjectFilter, setSubjectFilter] = useState("all")
   const [open, setOpen] = useState(false)
+  // null → the dialog is creating; an id → it is editing that course.
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [form, setForm] = useState(EMPTY)
   const [formError, setFormError] = useState("")
   const [saving, setSaving] = useState(false)
@@ -108,30 +110,72 @@ export default function ClassManagement() {
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
     setForm((f) => ({ ...f, [k]: v }))
 
-  const create = async () => {
+  const openCreate = () => {
+    setEditingId(null)
+    setForm(EMPTY)
     setFormError("")
-    if (form.code.trim().length < 2) return setFormError("Course code is required")
+    setOpen(true)
+  }
+
+  const openEdit = (c: Course) => {
+    setEditingId(c._id)
+    setForm({
+      code: c.code,
+      title: c.title,
+      subject: c.subject,
+      instructor: c.instructor?._id ?? "",
+      schedule: c.schedule ?? "",
+      room: c.room ?? "",
+      maxStudents: String(c.maxStudents ?? 30),
+      description: "",
+      status: (["draft", "active", "upcoming"].includes(c.status) ? c.status : "active") as
+        | "draft"
+        | "active"
+        | "upcoming",
+    })
+    setFormError("")
+    setOpen(true)
+  }
+
+  const save = async () => {
+    setFormError("")
+    if (!editingId && form.code.trim().length < 2) return setFormError("Course code is required")
     if (form.title.trim().length < 2) return setFormError("Title is required")
     if (!form.subject.trim()) return setFormError("Subject is required")
 
     setSaving(true)
     try {
-      await apiMutate("/api/courses", "POST", {
-        code: form.code.trim().toUpperCase(),
-        title: form.title.trim(),
-        subject: form.subject.trim(),
-        instructor: form.instructor || undefined,
-        schedule: form.schedule.trim() || undefined,
-        room: form.room.trim() || undefined,
-        maxStudents: Number(form.maxStudents) || 30,
-        description: form.description.trim() || undefined,
-        status: form.status,
-      })
+      if (editingId) {
+        // PATCH ignores code and instructor by design, so only send what it
+        // accepts — otherwise the request looks like it changed more than it did.
+        await apiMutate(`/api/courses/${editingId}`, "PATCH", {
+          title: form.title.trim(),
+          subject: form.subject.trim(),
+          schedule: form.schedule.trim() || undefined,
+          room: form.room.trim() || undefined,
+          maxStudents: Number(form.maxStudents) || 30,
+          description: form.description.trim() || undefined,
+          status: form.status,
+        })
+      } else {
+        await apiMutate("/api/courses", "POST", {
+          code: form.code.trim().toUpperCase(),
+          title: form.title.trim(),
+          subject: form.subject.trim(),
+          instructor: form.instructor || undefined,
+          schedule: form.schedule.trim() || undefined,
+          room: form.room.trim() || undefined,
+          maxStudents: Number(form.maxStudents) || 30,
+          description: form.description.trim() || undefined,
+          status: form.status,
+        })
+      }
       setOpen(false)
       setForm(EMPTY)
+      setEditingId(null)
       await coursesReq.refetch()
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Could not create the class")
+      setFormError(err instanceof Error ? err.message : "Could not save the class")
     } finally {
       setSaving(false)
     }
@@ -149,22 +193,37 @@ export default function ClassManagement() {
           <h1 className="text-3xl font-bold text-gray-900">Class Management</h1>
           <p className="text-gray-600">Create and manage courses across the school</p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
+        <Dialog
+          open={open}
+          onOpenChange={(o) => {
+            setOpen(o)
+            if (!o) setEditingId(null)
+          }}
+        >
           <DialogTrigger asChild>
-            <Button>
+            <Button onClick={openCreate}>
               <Plus className="h-4 w-4 mr-2" />
               Create Class
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-lg">
             <DialogHeader>
-              <DialogTitle>Create a class</DialogTitle>
-              <DialogDescription>Assign a teacher and set the schedule.</DialogDescription>
+              <DialogTitle>{editingId ? "Edit class" : "Create a class"}</DialogTitle>
+              <DialogDescription>
+                {editingId
+                  ? "Update the class details. The course code and instructor can't be changed here."
+                  : "Assign a teacher and set the schedule."}
+              </DialogDescription>
             </DialogHeader>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Course code</Label>
-                <Input placeholder="MATH-101" value={form.code} onChange={(e) => set("code", e.target.value)} />
+                <Input
+                  placeholder="MATH-101"
+                  value={form.code}
+                  onChange={(e) => set("code", e.target.value)}
+                  disabled={!!editingId}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Subject</Label>
@@ -176,7 +235,7 @@ export default function ClassManagement() {
               </div>
               <div className="col-span-2 space-y-2">
                 <Label>Instructor</Label>
-                <Select value={form.instructor} onValueChange={(v) => set("instructor", v)}>
+                <Select value={form.instructor} onValueChange={(v) => set("instructor", v)} disabled={!!editingId}>
                   <SelectTrigger>
                     <SelectValue placeholder="Assign a teacher" />
                   </SelectTrigger>
@@ -226,9 +285,9 @@ export default function ClassManagement() {
               <Button variant="outline" onClick={() => setOpen(false)} disabled={saving}>
                 Cancel
               </Button>
-              <Button onClick={create} disabled={saving}>
+              <Button onClick={save} disabled={saving}>
                 {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-                Create
+                {editingId ? "Save changes" : "Create"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -325,7 +384,12 @@ export default function ClassManagement() {
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => router.push(`/courses/${c._id}`)}>
+                            <Eye className="h-4 w-4 mr-2" />
                             View
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => openEdit(c)}>
+                            <Pencil className="h-4 w-4 mr-2" />
+                            Edit
                           </DropdownMenuItem>
                           {c.status !== "archived" && (
                             <DropdownMenuItem className="text-red-600" onClick={() => void archive(c._id)}>
