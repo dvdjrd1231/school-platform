@@ -64,7 +64,7 @@ export function Header() {
           </Button>
 
           {/* Notification Dropdown */}
-          <NotificationDropdown userId={1} />
+          <NotificationDropdown />
 
           {/* Profile Dropdown */}
           <DropdownMenu>
