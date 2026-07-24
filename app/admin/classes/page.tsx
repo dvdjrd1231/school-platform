@@ -9,6 +9,7 @@ import { useApi } from "@/hooks/use-api"
 import { apiMutate } from "@/lib/api/client"
 import { AsyncState } from "@/components/ui/async-state"
 import { StatTile } from "@/components/admin/stat-tile"
+import { RosterDialog } from "@/components/admin/roster-dialog"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -70,6 +71,8 @@ export default function ClassManagement() {
   const [editingId, setEditingId] = useState<string | null>(null)
   // The course shown in the read-only view modal, or null when closed.
   const [viewing, setViewing] = useState<Course | null>(null)
+  // The course whose roster is open, or null when closed.
+  const [rosterCourse, setRosterCourse] = useState<Course | null>(null)
   const [form, setForm] = useState(EMPTY)
   const [formError, setFormError] = useState("")
   const [saving, setSaving] = useState(false)
@@ -394,6 +397,10 @@ export default function ClassManagement() {
                             <Pencil className="h-4 w-4 mr-2" />
                             Edit
                           </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setRosterCourse(c)}>
+                            <Users className="h-4 w-4 mr-2" />
+                            Manage roster
+                          </DropdownMenuItem>
                           {c.status !== "archived" && (
                             <DropdownMenuItem className="text-red-600" onClick={() => void archive(c._id)}>
                               <Archive className="h-4 w-4 mr-2" />
@@ -410,6 +417,14 @@ export default function ClassManagement() {
           </AsyncState>
         </CardContent>
       </Card>
+
+      <RosterDialog
+        courseId={rosterCourse?._id ?? null}
+        courseTitle={rosterCourse?.title ?? ""}
+        open={!!rosterCourse}
+        onOpenChange={(o) => !o && setRosterCourse(null)}
+        onChange={coursesReq.refetch}
+      />
 
       {/* Read-only detail view. Editing is a separate action (the Edit menu item). */}
       <Dialog open={!!viewing} onOpenChange={(o) => !o && setViewing(null)}>
