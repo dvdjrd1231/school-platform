@@ -18,6 +18,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { StatTile } from "@/components/admin/stat-tile"
+import { ChildrenDialog } from "@/components/admin/children-dialog"
 import {
   Users,
   Plus,
@@ -76,6 +77,8 @@ export default function UserManagement() {
   const [selectedRole, setSelectedRole] = useState("all")
 
   const [isAddUserOpen, setIsAddUserOpen] = useState(false)
+  // The parent whose linked students are being edited, or null when closed.
+  const [manageChildrenOf, setManageChildrenOf] = useState<ApiUser | null>(null)
   const [form, setForm] = useState(EMPTY_FORM)
   const [formError, setFormError] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -421,6 +424,12 @@ export default function UserManagement() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            {role === "parent" && (
+                              <DropdownMenuItem onClick={() => setManageChildrenOf(user)}>
+                                <GraduationCap className="h-4 w-4 mr-2" />
+                                Linked students
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem asChild>
                               <a href={`mailto:${user.email}`}>
                                 <Mail className="h-4 w-4 mr-2" />
@@ -447,6 +456,14 @@ export default function UserManagement() {
           )}
         </CardContent>
       </Card>
+
+      <ChildrenDialog
+        parentId={manageChildrenOf?._id ?? null}
+        parentName={manageChildrenOf?.name ?? ""}
+        open={!!manageChildrenOf}
+        onOpenChange={(o) => !o && setManageChildrenOf(null)}
+        onChange={loadUsers}
+      />
     </div>
   )
 }
