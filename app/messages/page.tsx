@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useParams } from "next/navigation"
 import { useSession } from "next-auth/react"
 import { Loader2, MessageSquare, Plus, Send } from "lucide-react"
 
@@ -70,6 +71,9 @@ function senderName(m: Message): string {
 export default function MessagesPage() {
   const { data: session } = useSession()
   const meId = session?.user?.id ?? ""
+  // On /messages/[id] (e.g. from a message notification) this pre-opens that
+  // conversation; on /messages it's undefined and we open the first thread.
+  const routeConversationId = String((useParams() as { id?: string })?.id ?? "")
 
   const conversationsReq = useApi<{ conversations: Conversation[] }>("/api/conversations")
   const conversations = useMemo(
@@ -86,10 +90,14 @@ export default function MessagesPage() {
 
   const bottomRef = useRef<HTMLDivElement>(null)
 
-  // Open the first conversation once the list arrives.
+  // Pick the conversation to open: the one named in the URL if present
+  // (a notification deep-link), otherwise the most recent. The route id can be
+  // opened immediately — loadThread fetches it whether or not the list is ready.
   useEffect(() => {
-    if (!activeId && conversations.length > 0) setActiveId(conversations[0]._id)
-  }, [conversations, activeId])
+    if (activeId) return
+    if (routeConversationId) setActiveId(routeConversationId)
+    else if (conversations.length > 0) setActiveId(conversations[0]._id)
+  }, [conversations, activeId, routeConversationId])
 
   const loadThread = useCallback(async (id: string) => {
     if (!id) return
