@@ -42,7 +42,9 @@ export function RosterDialog({
   const rosterReq = useApi<{ roster: RosterRow[] }>(
     open && courseId ? `/api/courses/${courseId}/enroll` : null,
   )
-  const studentsReq = useApi<{ users: Student[] }>(open ? "/api/users?role=student&limit=200" : null)
+  // limit=100 is the API's maximum; a higher value 400s and the list comes back
+  // empty, which looks like "no students to enroll".
+  const studentsReq = useApi<{ users: Student[] }>(open ? "/api/users?role=student&limit=100" : null)
 
   const [selected, setSelected] = useState("")
   const [busy, setBusy] = useState(false)
@@ -112,6 +114,9 @@ export function RosterDialog({
           </Button>
         </div>
         {error && <p className="text-sm text-red-600">{error}</p>}
+        {studentsReq.error && (
+          <p className="text-sm text-red-600">Could not load students: {studentsReq.error}</p>
+        )}
 
         <div className="max-h-72 overflow-y-auto rounded border">
           <AsyncState
