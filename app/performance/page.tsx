@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { useSession } from "next-auth/react"
 import {
   Bar,
@@ -66,6 +67,7 @@ function standing(percent: number | null): { label: string; token: string } {
 
 export default function PerformancePage() {
   const { data: session } = useSession()
+  const searchParams = useSearchParams()
   const me = session?.user
   const roles = me?.roles ?? []
   const isStaff = roles.includes("teacher") || roles.includes("admin")
@@ -84,11 +86,16 @@ export default function PerformancePage() {
   }, [isStaff, isParent, staffList.data, parentSelf.data])
 
   // Students look at themselves; everyone else defaults to the first option.
+  // A ?studentId= in the URL wins, so links from Class Progress and the class
+  // list land on the person you clicked rather than the first in the list.
+  const linkedStudentId = searchParams.get("studentId")
+
   useEffect(() => {
     if (studentId) return
-    if (!isStaff && !isParent && me?.id) setStudentId(me.id)
+    if (linkedStudentId && (isStaff || isParent)) setStudentId(linkedStudentId)
+    else if (!isStaff && !isParent && me?.id) setStudentId(me.id)
     else if (options.length > 0) setStudentId(options[0]._id)
-  }, [isStaff, isParent, me?.id, options, studentId])
+  }, [isStaff, isParent, me?.id, options, studentId, linkedStudentId])
 
   const report = useApi<PerformanceReport>(studentId ? `/api/performance/${studentId}` : null)
   const data = report.data

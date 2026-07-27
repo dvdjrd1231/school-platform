@@ -16,7 +16,8 @@ export const runtime = "nodejs"
  *   parent   -> teachers of their children's courses, plus admins
  *   student  -> teachers of the courses they're enrolled in
  *
- * Only name/email/roles are exposed — never contact details of unrelated users.
+ * Only name/email/roles plus a teacher's public details (subject, office hours,
+ * bio) are exposed — never the personal contact details of unrelated users.
  */
 export async function GET() {
   try {
@@ -25,7 +26,7 @@ export async function GET() {
 
     if (hasRole(me, "admin")) {
       const all = await User.find({ status: "active", _id: { $ne: me.id } })
-        .select("name email roles avatar studentId")
+        .select("name email roles avatar studentId subject officeHours bio")
         .sort({ name: 1 })
         .lean()
       return json({ contacts: all })
@@ -80,7 +81,7 @@ export async function GET() {
     ids.delete(me.id)
 
     const contacts = await User.find({ _id: { $in: [...ids] }, status: "active" })
-      .select("name email roles avatar studentId")
+      .select("name email roles avatar studentId subject officeHours bio")
       .sort({ name: 1 })
       .lean()
 
