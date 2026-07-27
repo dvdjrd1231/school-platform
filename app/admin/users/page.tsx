@@ -30,6 +30,7 @@ import {
   UserCheck,
   Shield,
   Trash2,
+  Edit,
   Loader2,
 } from "lucide-react"
 
@@ -66,7 +67,16 @@ function primaryRole(roles: Role[]): Role {
         : "student"
 }
 
-const EMPTY_FORM = { name: "", email: "", role: "student" as Role, password: "", gradeLevel: "", subject: "", department: "" }
+const EMPTY_FORM = {
+  name: "",
+  email: "",
+  role: "student" as Role,
+  password: "",
+  gradeLevel: "",
+  subject: "",
+  department: "",
+  status: "active" as "active" | "inactive",
+}
 
 export default function UserManagement() {
   const [users, setUsers] = useState<ApiUser[]>([])
@@ -77,6 +87,8 @@ export default function UserManagement() {
   const [selectedRole, setSelectedRole] = useState("all")
 
   const [isAddUserOpen, setIsAddUserOpen] = useState(false)
+  // null → the dialog is creating; a user id → it is editing that user.
+  const [editingId, setEditingId] = useState<string | null>(null)
   // The parent whose linked students are being edited, or null when closed.
   const [manageChildrenOf, setManageChildrenOf] = useState<ApiUser | null>(null)
   const [form, setForm] = useState(EMPTY_FORM)
@@ -105,37 +117,66 @@ export default function UserManagement() {
     void loadUsers()
   }, [loadUsers])
 
-  const handleCreate = async () => {
+  const openCreate = () => {
+    setEditingId(null)
+    setForm(EMPTY_FORM)
+    setFormError("")
+    setIsAddUserOpen(true)
+  }
+
+  const openEdit = (user: ApiUser) => {
+    setEditingId(user._id)
+    setForm({
+      name: user.name,
+      email: user.email,
+      role: primaryRole(user.roles),
+      password: "",
+      gradeLevel: user.gradeLevel ?? "",
+      subject: user.subject ?? "",
+      department: user.department ?? "",
+      status: user.status,
+    })
+    setFormError("")
+    setIsAddUserOpen(true)
+  }
+
+  const handleSave = async () => {
     setFormError("")
 
     if (form.name.trim().length < 2) return setFormError("Name must be at least 2 characters")
     if (!form.email.includes("@")) return setFormError("Enter a valid email address")
-    if (form.password.length < 8) return setFormError("Password must be at least 8 characters")
+    // Password is required when creating, optional (leave blank to keep) when editing.
+    if (!editingId && form.password.length < 8) return setFormError("Password must be at least 8 characters")
+    if (editingId && form.password && form.password.length < 8)
+      return setFormError("New password must be at least 8 characters")
+
+    const payload: Record<string, unknown> = {
+      name: form.name.trim(),
+      email: form.email.trim(),
+      roles: [form.role],
+      gradeLevel: form.role === "student" ? form.gradeLevel || undefined : undefined,
+      subject: form.role === "teacher" ? form.subject || undefined : undefined,
+      department: form.role === "admin" ? form.department || undefined : undefined,
+    }
+    if (form.password) payload.password = form.password
+    if (editingId) payload.status = form.status
 
     setIsSubmitting(true)
     try {
-      const res = await fetch("/api/users", {
-        method: "POST",
+      const res = await fetch(editingId ? `/api/users/${editingId}` : "/api/users", {
+        method: editingId ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: form.name.trim(),
-          email: form.email.trim(),
-          password: form.password,
-          roles: [form.role],
-          gradeLevel: form.role === "student" ? form.gradeLevel || undefined : undefined,
-          subject: form.role === "teacher" ? form.subject || undefined : undefined,
-          department: form.role === "admin" ? form.department || undefined : undefined,
-        }),
+        body: JSON.stringify(payload),
       })
-
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error ?? `Failed to create user (${res.status})`)
+      if (!res.ok) throw new Error(data.error ?? `Failed to save user (${res.status})`)
 
       setIsAddUserOpen(false)
       setForm(EMPTY_FORM)
+      setEditingId(null)
       await loadUsers()
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Failed to create user")
+      setFormError(err instanceof Error ? err.message : "Failed to save user")
     } finally {
       setIsSubmitting(false)
     }
@@ -201,17 +242,21 @@ export default function UserManagement() {
           <h1 className="text-3xl font-bold text-gray-900">User Management</h1>
           <p className="text-gray-600">Manage students, teachers, and administrators</p>
         </div>
-        <Dialog open={isAddUserOpen} onOpenChange={setIsAddUserOpen}>
+        <Dialog open={isAddUserOpen} onOpenChange={(o) => { setIsAddUserOpen(o); if (!o) setEditingId(null) }}>
           <DialogTrigger asChild>
-            <Button>
+            <Button onClick={openCreate}>
               <Plus className="h-4 w-4 mr-2" />
               Add User
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Add New User</DialogTitle>
-              <DialogDescription>Create a new account. This is how teacher and admin accounts are created.</DialogDescription>
+              <DialogTitle>{editingId ? "Edit User" : "Add New User"}</DialogTitle>
+              <DialogDescription>
+                {editingId
+                  ? "Update this user's details, role, or status. Leave the password blank to keep it."
+                  : "Create a new account. This is how teacher and admin accounts are created."}
+              </DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
@@ -278,11 +323,31 @@ export default function UserManagement() {
                 </div>
               )}
 
+              {editingId && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Status</label>
+                  <Select
+                    value={form.status}
+                    onValueChange={(v) => setForm((f) => ({ ...f, status: v as "active" | "inactive" }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
               <div className="space-y-2">
-                <label className="text-sm font-medium">Temporary Password</label>
+                <label className="text-sm font-medium">
+                  {editingId ? "New password (optional)" : "Temporary Password"}
+                </label>
                 <Input
                   type="password"
-                  placeholder="At least 8 characters"
+                  placeholder={editingId ? "Leave blank to keep current" : "At least 8 characters"}
                   value={form.password}
                   onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
                 />
@@ -298,12 +363,14 @@ export default function UserManagement() {
               <Button variant="outline" onClick={() => setIsAddUserOpen(false)} disabled={isSubmitting}>
                 Cancel
               </Button>
-              <Button onClick={handleCreate} disabled={isSubmitting}>
+              <Button onClick={handleSave} disabled={isSubmitting}>
                 {isSubmitting ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Creating…
+                    Saving…
                   </>
+                ) : editingId ? (
+                  "Save changes"
                 ) : (
                   "Create User"
                 )}
@@ -424,6 +491,10 @@ export default function UserManagement() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => openEdit(user)}>
+                              <Edit className="h-4 w-4 mr-2" />
+                              Edit user
+                            </DropdownMenuItem>
                             {role === "parent" && (
                               <DropdownMenuItem onClick={() => setManageChildrenOf(user)}>
                                 <GraduationCap className="h-4 w-4 mr-2" />

@@ -1,62 +1,80 @@
 "use client"
 
 import type React from "react"
-import { useRole } from "@/components/context/role-context"
-import { useEffect } from "react"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { Loader2, MessageSquare } from "lucide-react"
+
+import { apiMutate } from "@/lib/api/client"
+import { useCourses } from "@/components/context/course-context"
+import { useRole } from "@/components/context/role-context"
+import { BackButton } from "@/components/ui/back-button"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ArrowLeft, MessageSquare } from "lucide-react"
+import { Textarea } from "@/components/ui/textarea"
 
+const CATEGORIES = [
+  "General",
+  "Homework Help",
+  "Project Discussion",
+  "Course Content",
+  "Q&A",
+] as const
+
+/**
+ * Full-page composer for a new discussion.
+ *
+ * Anyone in a class may start a thread — the board is how students ask each
+ * other questions. Only teachers and admins can pin one to the top.
+ */
 export default function NewDiscussionPage() {
   const router = useRouter()
-  const { isTeacher, isAdmin, currentRole } = useRole()
-  const [formData, setFormData] = useState({
+  const { isTeacher, isAdmin } = useRole()
+  const { courses, selectedId } = useCourses()
+  const canPin = isTeacher || isAdmin
+
+  const [form, setForm] = useState({
     title: "",
     content: "",
-    category: "",
-    tags: "",
+    category: "General",
+    course: selectedId ?? "",
+    pinned: false,
   })
+  const [error, setError] = useState("")
+  const [saving, setSaving] = useState(false)
 
-  useEffect(() => {
-    if (!isTeacher && !isAdmin) {
-      router.push("/classrooms/discussions")
-    }
-  }, [isTeacher, isAdmin, router])
-
-  if (!isTeacher && !isAdmin) {
-    return (
-      <div className="container mx-auto p-6 max-w-4xl">
-        <div className="text-center py-12">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">Access Denied</h1>
-          <p className="text-gray-600 mb-6">Only teachers and administrators can create new discussions.</p>
-          <Button onClick={() => router.push("/classrooms/discussions")}>Back to Discussions</Button>
-        </div>
-      </div>
-    )
-  }
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    // TODO: Save discussion to database
-    console.log("Creating discussion:", formData)
-    router.push("/classrooms/discussions")
+    setError("")
+
+    if (form.title.trim().length < 3) return setError("Give the discussion a title")
+    if (!form.content.trim()) return setError("Write the first post")
+
+    setSaving(true)
+    try {
+      const created = await apiMutate<{ _id: string }>("/api/discussions", "POST", {
+        title: form.title.trim(),
+        content: form.content.trim(),
+        category: form.category,
+        course: form.course || undefined,
+        pinned: canPin ? form.pinned : false,
+      })
+      router.push(`/discussions/${created._id}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create the discussion")
+      setSaving(false)
+    }
   }
 
   return (
-    <div className="container mx-auto p-6 max-w-4xl">
+    <div className="container mx-auto max-w-4xl p-6">
       <div className="mb-6">
-        <Button variant="ghost" onClick={() => router.back()} className="mb-4">
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Back to Discussions
-        </Button>
-        <h1 className="text-3xl font-bold text-gray-900">Start New Discussion</h1>
-        <p className="text-gray-600 mt-2">Create a new discussion topic for your class</p>
+        <BackButton fallback="/classrooms/discussions" label="Back to Discussions" className="mb-4" />
+        <h1 className="text-3xl font-bold text-gray-900">Start a new discussion</h1>
+        <p className="mt-2 text-gray-600">Create a discussion topic for your class</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -64,70 +82,98 @@ export default function NewDiscussionPage() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <MessageSquare className="h-5 w-5" />
-              Discussion Details
+              Discussion details
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div>
-              <Label htmlFor="title">Discussion Title</Label>
+            <div className="space-y-2">
+              <Label htmlFor="title">Discussion title</Label>
               <Input
                 id="title"
-                value={formData.title}
-                onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
-                placeholder="Enter discussion title"
+                value={form.title}
+                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                placeholder="Enter a discussion title"
                 required
               />
             </div>
 
-            <div>
-              <Label htmlFor="category">Category</Label>
-              <Select onValueChange={(value) => setFormData((prev) => ({ ...prev, category: value }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="general">General Discussion</SelectItem>
-                  <SelectItem value="homework">Homework Help</SelectItem>
-                  <SelectItem value="project">Project Discussion</SelectItem>
-                  <SelectItem value="announcement">Announcements</SelectItem>
-                  <SelectItem value="qa">Q&A</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Category</Label>
+                <Select
+                  value={form.category}
+                  onValueChange={(value) => setForm((f) => ({ ...f, category: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CATEGORIES.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {c}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Class</Label>
+                <Select
+                  value={form.course || "school"}
+                  onValueChange={(value) =>
+                    setForm((f) => ({ ...f, course: value === "school" ? "" : value }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="school">Whole school</SelectItem>
+                    {courses.map((c) => (
+                      <SelectItem key={c._id} value={c._id}>
+                        {c.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
-            <div>
+            <div className="space-y-2">
               <Label htmlFor="content">Content</Label>
               <Textarea
                 id="content"
-                value={formData.content}
-                onChange={(e) => setFormData((prev) => ({ ...prev, content: e.target.value }))}
-                placeholder="Write your discussion post here..."
+                value={form.content}
+                onChange={(e) => setForm((f) => ({ ...f, content: e.target.value }))}
+                placeholder="Write your discussion post here…"
                 rows={8}
                 required
               />
             </div>
 
-            <div>
-              <Label htmlFor="tags">Tags (optional)</Label>
-              <Input
-                id="tags"
-                value={formData.tags}
-                onChange={(e) => setFormData((prev) => ({ ...prev, tags: e.target.value }))}
-                placeholder="Enter tags separated by commas"
-              />
-              <p className="text-sm text-gray-500 mt-1">
-                Tags help others find your discussion. Example: math, algebra, homework
-              </p>
-            </div>
+            {canPin && (
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={form.pinned}
+                  onChange={(e) => setForm((f) => ({ ...f, pinned: e.target.checked }))}
+                />
+                Pin this discussion to the top of the board
+              </label>
+            )}
+
+            {error && <p className="text-sm text-red-600">{error}</p>}
           </CardContent>
         </Card>
 
         <div className="flex justify-end gap-4">
-          <Button type="button" variant="outline" onClick={() => router.back()}>
+          <Button type="button" variant="outline" onClick={() => router.back()} disabled={saving}>
             Cancel
           </Button>
-          <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700">
-            Post Discussion
+          <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700" disabled={saving}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Post discussion
           </Button>
         </div>
       </form>

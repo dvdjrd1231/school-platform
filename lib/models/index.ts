@@ -11,6 +11,15 @@ export { Submission, type ISubmission } from "./Submission"
 export { Conversation, type IConversation } from "./Conversation"
 export { Message, type IMessage } from "./Message"
 export { Notification, type INotification } from "./Notification"
+export {
+  Announcement,
+  ANNOUNCEMENT_AUDIENCES,
+  type IAnnouncement,
+  type IAnnouncementReply,
+  type AnnouncementAudience,
+} from "./Announcement"
+export { Discussion, type IDiscussion, type IDiscussionReply } from "./Discussion"
+export { CalendarEvent, EVENT_TYPES, type ICalendarEvent, type EventType } from "./CalendarEvent"
 export { Skill, type ISkill } from "./Skill"
 export {
   SkillAssessment,

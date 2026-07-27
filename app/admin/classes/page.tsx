@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Search, Plus, MoreHorizontal, Archive, Loader2, Users, GraduationCap, BookOpen, Eye, Pencil } from "lucide-react"
+import { Search, Plus, MoreHorizontal, Archive, Loader2, Users, GraduationCap, BookOpen, Eye, Pencil, Trash2 } from "lucide-react"
 
 import { useRole } from "@/components/context/role-context"
 import { useApi } from "@/hooks/use-api"
@@ -152,11 +152,12 @@ export default function ClassManagement() {
     setSaving(true)
     try {
       if (editingId) {
-        // PATCH ignores code and instructor by design, so only send what it
-        // accepts — otherwise the request looks like it changed more than it did.
+        // Course code stays fixed; instructor CAN now be reassigned (admin-only,
+        // enforced server-side).
         await apiMutate(`/api/courses/${editingId}`, "PATCH", {
           title: form.title.trim(),
           subject: form.subject.trim(),
+          instructor: form.instructor || undefined,
           schedule: form.schedule.trim() || undefined,
           room: form.room.trim() || undefined,
           maxStudents: Number(form.maxStudents) || 30,
@@ -192,6 +193,17 @@ export default function ClassManagement() {
     await coursesReq.refetch()
   }
 
+  const remove = async (c: Course) => {
+    if (!window.confirm(`Permanently delete "${c.title}"? This cannot be undone.`)) return
+    try {
+      await apiMutate(`/api/courses/${c._id}?hard=true`, "DELETE")
+      await coursesReq.refetch()
+    } catch (err) {
+      // The API refuses when the class still has students or lessons.
+      window.alert(err instanceof Error ? err.message : "Could not delete the class")
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -217,7 +229,7 @@ export default function ClassManagement() {
               <DialogTitle>{editingId ? "Edit class" : "Create a class"}</DialogTitle>
               <DialogDescription>
                 {editingId
-                  ? "Update the class details. The course code and instructor can't be changed here."
+                  ? "Update the class details. The course code can't be changed, but you can reassign the teacher."
                   : "Assign a teacher and set the schedule."}
               </DialogDescription>
             </DialogHeader>
@@ -241,7 +253,7 @@ export default function ClassManagement() {
               </div>
               <div className="col-span-2 space-y-2">
                 <Label>Instructor</Label>
-                <Select value={form.instructor} onValueChange={(v) => set("instructor", v)} disabled={!!editingId}>
+                <Select value={form.instructor} onValueChange={(v) => set("instructor", v)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Assign a teacher" />
                   </SelectTrigger>
@@ -402,11 +414,15 @@ export default function ClassManagement() {
                             Manage roster
                           </DropdownMenuItem>
                           {c.status !== "archived" && (
-                            <DropdownMenuItem className="text-red-600" onClick={() => void archive(c._id)}>
+                            <DropdownMenuItem onClick={() => void archive(c._id)}>
                               <Archive className="h-4 w-4 mr-2" />
                               Archive
                             </DropdownMenuItem>
                           )}
+                          <DropdownMenuItem className="text-red-600" onClick={() => void remove(c)}>
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
