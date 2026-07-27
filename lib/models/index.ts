@@ -20,6 +20,8 @@ export {
 } from "./Announcement"
 export { Discussion, type IDiscussion, type IDiscussionReply } from "./Discussion"
 export { CalendarEvent, EVENT_TYPES, type ICalendarEvent, type EventType } from "./CalendarEvent"
+export { FileAsset, FILE_CONTEXTS, type IFileAsset, type FileContext } from "./FileAsset"
+export { Category, type ICategory } from "./Category"
 export { Skill, type ISkill } from "./Skill"
 export {
   SkillAssessment,

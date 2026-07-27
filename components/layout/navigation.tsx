@@ -66,7 +66,8 @@ const moreToolsItems = [
   { title: "Class Progress", href: "/tools/progress", icon: BarChart3 },
   { title: "Class List", href: "/tools/class-list", icon: Users },
   { title: "Library", href: "/tools/library", icon: Library },
-  { title: "Groups", href: "/tools/groups", icon: Users },
+  // The page lives at /groups; the old /tools/groups link 404'd.
+  { title: "Groups", href: "/groups", icon: Users },
   { title: "Surveys", href: "/tools/surveys", icon: ClipboardCheck },
   { title: "E Portfolio", href: "/tools/portfolio", icon: FileText },
   { title: "My Media", href: "/tools/media", icon: FileText },
@@ -86,6 +87,9 @@ const adminItems = [
   { title: "Lesson Management", href: "/admin/lessons", icon: BookOpen },
   { title: "Grade Management", href: "/admin/grades", icon: BarChart3 },
   { title: "Skills & Standards", href: "/admin/skills", icon: Target },
+  { title: "Categories", href: "/admin/categories", icon: Library },
+  { title: "Attendance", href: "/admin/attendance", icon: UserCheck },
+  { title: "School Calendar", href: "/admin/calendar", icon: Calendar },
 ]
 
 export function Navigation() {
