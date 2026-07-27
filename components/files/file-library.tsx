@@ -38,7 +38,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { CategoryPicker } from "@/components/files/category-picker"
 
-export type FileContext = "media" | "gallery" | "library" | "portfolio" | "lesson" | "report"
+export type FileContext =
+  | "media"
+  | "gallery"
+  | "library"
+  | "portfolio"
+  | "seminar"
+  | "lesson"
+  | "report"
 
 export interface StoredFile {
   _id: string

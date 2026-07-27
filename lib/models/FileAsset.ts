@@ -10,6 +10,7 @@ export const FILE_CONTEXTS = [
   "gallery",
   "library",
   "portfolio",
+  "seminar",
   "lesson",
   "report",
   "avatar",

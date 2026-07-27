@@ -1,262 +1,276 @@
 "use client"
 
 import { useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Bell, Loader2, Send } from "lucide-react"
+
+import { useApi } from "@/hooks/use-api"
+import { apiMutate } from "@/lib/api/client"
+import { useCourses } from "@/components/context/course-context"
+import { AsyncState } from "@/components/ui/async-state"
+import { useConfirm } from "@/components/ui/confirm-dialog"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Badge } from "@/components/ui/badge"
-import { Bell, Send } from "lucide-react"
-import { useRole } from "@/components/context/role-context"
-import { createNotification, type Notification } from "@/lib/database"
+import { Textarea } from "@/components/ui/textarea"
 
+type Audience = "all" | "student" | "teacher" | "parent" | "admin" | "course"
+
+interface NotificationItem {
+  _id: string
+  title: string
+  message: string
+  type: string
+  priority: string
+  isRead: boolean
+  createdAt: string
+}
+
+const AUDIENCE_LABEL: Record<Audience, string> = {
+  all: "Everyone",
+  student: "All students",
+  teacher: "All teachers",
+  parent: "All parents",
+  admin: "All admins",
+  course: "One class",
+}
+
+/**
+ * Admin notifications: send one, and see your own feed.
+ *
+ * This is the deliberate broadcast channel. Announcements are the place for
+ * something people should be able to read back and reply to; this is for a
+ * short, one-way "the system will be down on Friday".
+ */
 export default function AdminNotificationsPage() {
-  const { isAdmin, isTeacher } = useRole()
-  const [notification, setNotification] = useState({
+  const { courses } = useCourses()
+  const feed = useApi<{ notifications: NotificationItem[]; unreadCount: number }>(
+    "/api/notifications?limit=30",
+  )
+
+  const [form, setForm] = useState({
     title: "",
     message: "",
-    type: "announcement" as Notification["type"],
-    priority: "medium" as Notification["priority"],
-    recipient: "all", // all, students, teachers, parents, specific-class
-    classId: "",
+    audience: "all" as Audience,
+    courseId: "",
+    priority: "medium" as "high" | "medium" | "low",
     actionUrl: "",
   })
+  const [sending, setSending] = useState(false)
+  const [result, setResult] = useState("")
+  const [error, setError] = useState("")
+  const [confirm, confirmDialog] = useConfirm()
 
-  const [sentNotifications, setSentNotifications] = useState<Array<Notification & { recipient: string }>>([])
+  const send = async () => {
+    setError("")
+    setResult("")
 
-  const handleSendNotification = () => {
-    if (!isAdmin && !isTeacher) return
+    if (form.title.trim().length < 2) return setError("Give the notification a title")
+    if (!form.message.trim()) return setError("Write the message")
+    if (form.audience === "course" && !form.courseId) return setError("Choose a class")
 
-    // Create notification for different recipient groups
-    const baseNotification = {
-      title: notification.title,
-      message: notification.message,
-      type: notification.type,
-      priority: notification.priority,
-      isRead: false,
-      createdAt: new Date().toISOString(),
-      actionUrl: notification.actionUrl || undefined,
-      classId: notification.classId ? Number.parseInt(notification.classId) : undefined,
-    }
-
-    // Send to appropriate users based on recipient selection
-    let recipientCount = 0
-    if (notification.recipient === "all") {
-      // Send to all users (students, teachers, parents)
-      for (let userId = 1; userId <= 50; userId++) {
-        createNotification({ ...baseNotification, userId })
-        recipientCount++
-      }
-    } else if (notification.recipient === "students") {
-      // Send to students only
-      for (let userId = 1; userId <= 30; userId++) {
-        createNotification({ ...baseNotification, userId })
-        recipientCount++
-      }
-    } else if (notification.recipient === "teachers") {
-      // Send to teachers only
-      for (let userId = 31; userId <= 40; userId++) {
-        createNotification({ ...baseNotification, userId })
-        recipientCount++
-      }
-    } else if (notification.recipient === "parents") {
-      // Send to parents only
-      for (let userId = 41; userId <= 50; userId++) {
-        createNotification({ ...baseNotification, userId })
-        recipientCount++
-      }
-    }
-
-    // Add to sent notifications list
-    setSentNotifications([
-      { ...baseNotification, id: Date.now(), recipient: notification.recipient },
-      ...sentNotifications,
-    ])
-
-    // Reset form
-    setNotification({
-      title: "",
-      message: "",
-      type: "announcement",
-      priority: "medium",
-      recipient: "all",
-      classId: "",
-      actionUrl: "",
+    const ok = await confirm({
+      title: `Send to ${AUDIENCE_LABEL[form.audience].toLowerCase()}?`,
+      description:
+        "Everyone it reaches gets it immediately, and it can't be recalled. For anything people should be able to read back or reply to, post an announcement instead.",
+      confirmLabel: "Send",
+      destructive: false,
     })
+    if (!ok) return
 
-    alert(`Notification sent to ${recipientCount} recipients!`)
-  }
-
-  if (!isAdmin && !isTeacher) {
-    return (
-      <div className="container mx-auto p-6">
-        <Card>
-          <CardContent className="p-8 text-center">
-            <h2 className="text-xl font-semibold text-red-600 mb-2">Access Denied</h2>
-            <p className="text-gray-600">Only administrators and teachers can send notifications.</p>
-          </CardContent>
-        </Card>
-      </div>
-    )
+    setSending(true)
+    try {
+      const response = await apiMutate<{ sent: number }>("/api/notifications", "POST", {
+        title: form.title.trim(),
+        message: form.message.trim(),
+        audience: form.audience,
+        courseId: form.audience === "course" ? form.courseId : undefined,
+        priority: form.priority,
+        actionUrl: form.actionUrl.trim() || undefined,
+      })
+      setResult(`Sent to ${response.sent} ${response.sent === 1 ? "person" : "people"}.`)
+      setForm((f) => ({ ...f, title: "", message: "", actionUrl: "" }))
+      await feed.refetch()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not send the notification")
+    } finally {
+      setSending(false)
+    }
   }
 
   return (
-    <div className="container mx-auto p-6">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900">Send Notifications</h1>
-        <p className="text-gray-600 mt-2">Send notifications to students, teachers, and parents</p>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900">Notifications</h1>
+        <p className="text-gray-600">Send a short message straight to people&apos;s bells.</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Send Notification Form */}
+      <div className="grid gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Bell className="h-5 w-5" />
-              Create Notification
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Send className="h-5 w-5" />
+              Send a notification
             </CardTitle>
+            <CardDescription>
+              For anything that needs a reply or a record, post an announcement instead.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div>
-              <Label htmlFor="title">Title</Label>
+            <div className="space-y-2">
+              <Label>Title</Label>
               <Input
-                id="title"
-                value={notification.title}
-                onChange={(e) => setNotification({ ...notification, title: e.target.value })}
-                placeholder="Enter notification title"
+                value={form.title}
+                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                placeholder="Systems maintenance on Friday"
               />
             </div>
 
-            <div>
-              <Label htmlFor="message">Message</Label>
+            <div className="space-y-2">
+              <Label>Message</Label>
               <Textarea
-                id="message"
-                value={notification.message}
-                onChange={(e) => setNotification({ ...notification, message: e.target.value })}
-                placeholder="Enter notification message"
                 rows={4}
+                value={form.message}
+                onChange={(e) => setForm((f) => ({ ...f, message: e.target.value }))}
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="type">Type</Label>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Send to</Label>
                 <Select
-                  value={notification.type}
-                  onValueChange={(value: Notification["type"]) => setNotification({ ...notification, type: value })}
+                  value={form.audience}
+                  onValueChange={(v) => setForm((f) => ({ ...f, audience: v as Audience }))}
                 >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="announcement">Announcement</SelectItem>
-                    <SelectItem value="assignment">Assignment</SelectItem>
-                    <SelectItem value="grade">Grade</SelectItem>
-                    <SelectItem value="discussion">Discussion</SelectItem>
-                    <SelectItem value="system">System</SelectItem>
+                    {(Object.keys(AUDIENCE_LABEL) as Audience[]).map((key) => (
+                      <SelectItem key={key} value={key}>
+                        {AUDIENCE_LABEL[key]}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
 
-              <div>
-                <Label htmlFor="priority">Priority</Label>
+              <div className="space-y-2">
+                <Label>Priority</Label>
                 <Select
-                  value={notification.priority}
-                  onValueChange={(value: Notification["priority"]) =>
-                    setNotification({ ...notification, priority: value })
+                  value={form.priority}
+                  onValueChange={(v) =>
+                    setForm((f) => ({ ...f, priority: v as "high" | "medium" | "low" }))
                   }
                 >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="low">Low</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
                     <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="low">Low</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
 
-            <div>
-              <Label htmlFor="recipient">Send To</Label>
-              <Select
-                value={notification.recipient}
-                onValueChange={(value) => setNotification({ ...notification, recipient: value })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Users</SelectItem>
-                  <SelectItem value="students">Students Only</SelectItem>
-                  <SelectItem value="teachers">Teachers Only</SelectItem>
-                  <SelectItem value="parents">Parents Only</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {form.audience === "course" && (
+              <div className="space-y-2">
+                <Label>Class</Label>
+                <Select
+                  value={form.courseId || undefined}
+                  onValueChange={(v) => setForm((f) => ({ ...f, courseId: v }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose a class" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {courses.map((c) => (
+                      <SelectItem key={c._id} value={c._id}>
+                        {c.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
-            <div>
-              <Label htmlFor="actionUrl">Action URL (Optional)</Label>
+            <div className="space-y-2">
+              <Label>Link (optional)</Label>
               <Input
-                id="actionUrl"
-                value={notification.actionUrl}
-                onChange={(e) => setNotification({ ...notification, actionUrl: e.target.value })}
-                placeholder="e.g., /assignments/123"
+                value={form.actionUrl}
+                onChange={(e) => setForm((f) => ({ ...f, actionUrl: e.target.value }))}
+                placeholder="/announcements"
               />
+              <p className="text-xs text-muted-foreground">
+                Where clicking the notification takes them.
+              </p>
             </div>
 
-            <Button
-              onClick={handleSendNotification}
-              className="w-full bg-emerald-600 hover:bg-emerald-700"
-              disabled={!notification.title || !notification.message}
-            >
-              <Send className="h-4 w-4 mr-2" />
-              Send Notification
+            {error && <p className="text-sm text-red-600">{error}</p>}
+            {result && <p className="text-sm text-green-700">{result}</p>}
+
+            <Button onClick={() => void send()} disabled={sending}>
+              {sending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="mr-2 h-4 w-4" />
+              )}
+              Send
             </Button>
           </CardContent>
         </Card>
 
-        {/* Sent Notifications */}
         <Card>
           <CardHeader>
-            <CardTitle>Recently Sent</CardTitle>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Bell className="h-5 w-5" />
+              Your notifications
+            </CardTitle>
+            <CardDescription>
+              What&apos;s landed on your own account, newest first.
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {sentNotifications.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">No notifications sent yet</p>
-              ) : (
-                sentNotifications.map((notif) => (
-                  <div key={notif.id} className="border rounded-lg p-4">
-                    <div className="flex items-start justify-between mb-2">
-                      <h4 className="font-medium">{notif.title}</h4>
-                      <Badge
-                        className={
-                          notif.priority === "high"
-                            ? "bg-red-100 text-red-800"
-                            : notif.priority === "medium"
-                              ? "bg-yellow-100 text-yellow-800"
-                              : "bg-gray-100 text-gray-800"
-                        }
-                      >
-                        {notif.priority}
-                      </Badge>
+            <AsyncState
+              isLoading={feed.isLoading}
+              error={feed.error}
+              isEmpty={(feed.data?.notifications ?? []).length === 0}
+              emptyMessage="Nothing yet."
+              onRetry={feed.refetch}
+            >
+              <div className="space-y-3">
+                {(feed.data?.notifications ?? []).map((item) => (
+                  <div
+                    key={item._id}
+                    className={`rounded-md border p-3 ${item.isRead ? "" : "bg-emerald-50"}`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-medium">{item.title}</p>
+                      <div className="flex shrink-0 gap-1">
+                        {!item.isRead && <Badge>New</Badge>}
+                        <Badge variant="outline">{item.type}</Badge>
+                      </div>
                     </div>
-                    <p className="text-sm text-gray-600 mb-2">{notif.message}</p>
-                    <div className="flex items-center gap-4 text-xs text-gray-500">
-                      <span>To: {notif.recipient}</span>
-                      <span>{new Date(notif.createdAt).toLocaleString()}</span>
-                    </div>
+                    <p className="text-sm text-muted-foreground">{item.message}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {new Date(item.createdAt).toLocaleString(undefined, {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      })}
+                    </p>
                   </div>
-                ))
-              )}
-            </div>
+                ))}
+              </div>
+            </AsyncState>
           </CardContent>
         </Card>
       </div>
+
+      {confirmDialog}
     </div>
   )
 }

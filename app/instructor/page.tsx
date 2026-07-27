@@ -1,177 +1,217 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
+import { BookOpen, Clock, Mail, MessageSquare, Users } from "lucide-react"
+
+import { useApi } from "@/hooks/use-api"
+import { apiMutate } from "@/lib/api/client"
+import { useCourses } from "@/components/context/course-context"
+import { AsyncState } from "@/components/ui/async-state"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { User, Mail, Phone, MapPin, BookOpen, Star, MessageSquare } from "lucide-react"
-import { getInstructors } from "@/lib/database"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
-export default function InstructorPage() {
-  const [instructors, setInstructors] = useState<any[]>([])
-  const [showMessageModal, setShowMessageModal] = useState(false)
-  const [showScheduleModal, setShowScheduleModal] = useState(false)
-  const [selectedInstructor, setSelectedInstructor] = useState<any>(null)
-  const [message, setMessage] = useState("")
-  const [meetingDate, setMeetingDate] = useState("")
-  const [meetingTime, setMeetingTime] = useState("")
+interface Instructor {
+  _id: string
+  name?: string
+  email?: string
+  avatar?: string
+  subject?: string
+  officeHours?: string
+  bio?: string
+  department?: string
+}
 
-  useEffect(() => {
-    setInstructors(getInstructors())
-  }, [])
+function initials(name?: string): string {
+  if (!name) return "?"
+  return name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("")
+}
 
-  const handleSendMessage = (instructor: any) => {
-    setSelectedInstructor(instructor)
-    setShowMessageModal(true)
+/**
+ * The instructor profile for the currently selected class.
+ *
+ * The page used to show a fixed fictional teacher. It now follows the course
+ * picker: whichever class you're in, this is the person teaching it, the other
+ * classes they take, and a way to message them.
+ */
+export default function InstructorProfilePage() {
+  const router = useRouter()
+  const { courses, selected, selectedId, isLoading } = useCourses()
+  const [messaging, setMessaging] = useState(false)
+
+  const instructorId = selected?.instructor?._id ?? null
+  const profile = useApi<Instructor>(instructorId ? `/api/users/${instructorId}` : null)
+
+  // The other classes this teacher takes, from the list we already have.
+  const alsoTeaches = useMemo(
+    () =>
+      courses.filter(
+        (c) => c.instructor?._id && c.instructor._id === instructorId && c._id !== selectedId,
+      ),
+    [courses, instructorId, selectedId],
+  )
+
+  const message = async () => {
+    if (!instructorId) return
+    setMessaging(true)
+    try {
+      const conversation = await apiMutate<{ _id: string }>("/api/conversations", "POST", {
+        participantIds: [instructorId],
+      })
+      router.push(`/messages/${conversation._id}`)
+    } catch {
+      router.push("/messages")
+    } finally {
+      setMessaging(false)
+    }
   }
 
-  const handleScheduleMeeting = (instructor: any) => {
-    setSelectedInstructor(instructor)
-    setShowScheduleModal(true)
+  if (!isLoading && !selectedId) {
+    return (
+      <div className="container mx-auto p-6">
+        <Card>
+          <CardContent className="py-16 text-center text-muted-foreground">
+            Choose a class from the sidebar to see who teaches it.
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
-  const submitMessage = () => {
-    console.log("[v0] Sending message to:", selectedInstructor?.name, "Message:", message)
-    alert(`Message sent to ${selectedInstructor?.name}!`)
-    setShowMessageModal(false)
-    setMessage("")
+  if (selected && !instructorId) {
+    return (
+      <div className="container mx-auto p-6">
+        <Card>
+          <CardContent className="py-16 text-center text-muted-foreground">
+            {selected.title} has no teacher assigned yet.
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
-  const submitMeeting = () => {
-    console.log("[v0] Scheduling meeting with:", selectedInstructor?.name, "Date:", meetingDate, "Time:", meetingTime)
-    alert(`Meeting scheduled with ${selectedInstructor?.name} on ${meetingDate} at ${meetingTime}!`)
-    setShowScheduleModal(false)
-    setMeetingDate("")
-    setMeetingTime("")
-  }
+  const teacher = profile.data
 
   return (
-    <div className="container mx-auto p-6">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-emerald-600">Instructor Profiles</h1>
-        <p className="text-muted-foreground">Connect with your course instructors</p>
+    <div className="container mx-auto space-y-6 p-6">
+      <div>
+        <h1 className="text-3xl font-bold text-emerald-600">Instructor</h1>
+        <p className="text-muted-foreground">
+          {selected ? `Who teaches ${selected.title}` : "Your teacher"}
+        </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {instructors.map((instructor) => (
-          <Card key={instructor.id} className="hover:shadow-lg transition-shadow">
-            <CardHeader className="text-center">
-              <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <User className="h-10 w-10 text-emerald-600" />
-              </div>
-              <CardTitle className="text-xl">{instructor.name}</CardTitle>
-              <p className="text-muted-foreground">{instructor.title}</p>
-              <div className="flex items-center justify-center gap-1">
-                <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                <span className="text-sm">{instructor.rating}</span>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm">
-                  <Mail className="h-4 w-4 text-muted-foreground" />
-                  <span>{instructor.email}</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <Phone className="h-4 w-4 text-muted-foreground" />
-                  <span>{instructor.phone}</span>
-                </div>
-                <div className="flex items-center gap-2 text-sm">
-                  <MapPin className="h-4 w-4 text-muted-foreground" />
-                  <span>{instructor.office}</span>
-                </div>
-              </div>
+      <AsyncState isLoading={profile.isLoading} error={profile.error} onRetry={profile.refetch}>
+        {teacher && (
+          <div className="grid gap-6 lg:grid-cols-3">
+            <Card className="lg:col-span-1">
+              <CardContent className="flex flex-col items-center gap-4 pt-6 text-center">
+                <Avatar className="h-24 w-24">
+                  {teacher.avatar && <AvatarImage src={teacher.avatar} alt={teacher.name ?? ""} />}
+                  <AvatarFallback className="text-xl">{initials(teacher.name)}</AvatarFallback>
+                </Avatar>
 
-              <div>
-                <h4 className="font-medium mb-2 flex items-center gap-2">
-                  <BookOpen className="h-4 w-4" />
-                  Courses
-                </h4>
-                <div className="flex flex-wrap gap-1">
-                  {instructor.courses.map((course: string, index: number) => (
-                    <Badge key={index} variant="outline" className="text-xs">
-                      {course}
-                    </Badge>
-                  ))}
+                <div>
+                  <h2 className="text-xl font-semibold">{teacher.name}</h2>
+                  {teacher.subject && <Badge className="mt-1">{teacher.subject}</Badge>}
+                  {teacher.department && (
+                    <p className="mt-1 text-sm text-muted-foreground">{teacher.department}</p>
+                  )}
                 </div>
-              </div>
 
-              <div className="space-y-2">
-                <Button className="w-full" size="sm" onClick={() => handleSendMessage(instructor)}>
-                  <MessageSquare className="h-4 w-4 mr-2" />
-                  Send Message
+                <div className="w-full space-y-2 border-t pt-4 text-left text-sm">
+                  {teacher.email && (
+                    <p className="flex items-center gap-2 break-all">
+                      <Mail className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      {teacher.email}
+                    </p>
+                  )}
+                  <p className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-muted-foreground" />
+                    {teacher.officeHours ?? "No office hours listed"}
+                  </p>
+                </div>
+
+                <Button className="w-full" onClick={() => void message()} disabled={messaging}>
+                  <MessageSquare className="mr-2 h-4 w-4" />
+                  Send a message
                 </Button>
-                <Button
-                  variant="outline"
-                  className="w-full bg-transparent"
-                  size="sm"
-                  onClick={() => handleScheduleMeeting(instructor)}
-                >
-                  Schedule Meeting
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+              </CardContent>
+            </Card>
 
-      {showMessageModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold mb-4">Send Message to {selectedInstructor?.name}</h3>
-            <textarea
-              className="w-full p-3 border rounded-md h-32 mb-4"
-              placeholder="Type your message here..."
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-            />
-            <div className="flex gap-2">
-              <Button onClick={submitMessage} className="flex-1">
-                Send Message
-              </Button>
-              <Button variant="outline" onClick={() => setShowMessageModal(false)}>
-                Cancel
-              </Button>
+            <div className="space-y-6 lg:col-span-2">
+              {teacher.bio && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">About</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="whitespace-pre-wrap leading-relaxed">{teacher.bio}</p>
+                  </CardContent>
+                </Card>
+              )}
+
+              {selected && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <BookOpen className="h-5 w-5" />
+                      This class
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 text-sm">
+                    <p className="font-medium">{selected.title}</p>
+                    <p className="text-muted-foreground">
+                      {selected.subject}
+                      {selected.schedule ? ` · ${selected.schedule}` : ""}
+                      {selected.room ? ` · Room ${selected.room}` : ""}
+                    </p>
+                    <p className="flex items-center gap-2 text-muted-foreground">
+                      <Users className="h-4 w-4" />
+                      {selected.enrolledCount ?? 0}
+                      {selected.maxStudents ? ` / ${selected.maxStudents}` : ""} enrolled
+                    </p>
+                    <Button variant="outline" onClick={() => router.push(`/courses/${selected._id}`)}>
+                      Open the course
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+
+              {alsoTeaches.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Also teaches</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {alsoTeaches.map((course) => (
+                      <button
+                        type="button"
+                        key={course._id}
+                        className="block w-full rounded border p-3 text-left text-sm hover:bg-muted/50"
+                        onClick={() => router.push(`/courses/${course._id}`)}
+                      >
+                        <span className="font-medium">{course.title}</span>
+                        {course.schedule && (
+                          <span className="block text-xs text-muted-foreground">
+                            {course.schedule}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
             </div>
           </div>
-        </div>
-      )}
-
-      {showScheduleModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold mb-4">Schedule Meeting with {selectedInstructor?.name}</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">Date</label>
-                <input
-                  type="date"
-                  className="w-full p-2 border rounded-md"
-                  value={meetingDate}
-                  onChange={(e) => setMeetingDate(e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-2">Time</label>
-                <input
-                  type="time"
-                  className="w-full p-2 border rounded-md"
-                  value={meetingTime}
-                  onChange={(e) => setMeetingTime(e.target.value)}
-                />
-              </div>
-            </div>
-            <div className="flex gap-2 mt-6">
-              <Button onClick={submitMeeting} className="flex-1">
-                Schedule Meeting
-              </Button>
-              <Button variant="outline" onClick={() => setShowScheduleModal(false)}>
-                Cancel
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
+        )}
+      </AsyncState>
     </div>
   )
 }

@@ -1,132 +1,153 @@
 "use client"
 
-import { useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import { FileText, Plus, Search, Calendar, Edit, Trash2 } from "lucide-react"
+import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
+import { Pin, Plus, Search, StickyNote, Trash2 } from "lucide-react"
 
+import { useApi } from "@/hooks/use-api"
+import { apiMutate } from "@/lib/api/client"
+import { AsyncState } from "@/components/ui/async-state"
+import { useConfirm } from "@/components/ui/confirm-dialog"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+
+interface NoteItem {
+  _id: string
+  title: string
+  content: string
+  tags: string[]
+  pinned: boolean
+  updatedAt: string
+  course?: { _id: string; title: string } | null
+}
+
+/** Your own study notes. Private to you — nobody else can read them. */
 export default function NotesPage() {
-  const [searchQuery, setSearchQuery] = useState("")
   const router = useRouter()
+  const { data, error, isLoading, refetch } = useApi<{ notes: NoteItem[] }>("/api/notes")
+  const [search, setSearch] = useState("")
+  const [confirm, confirmDialog] = useConfirm()
 
-  const notes = [
-    {
-      id: 1,
-      title: "Linear Equations Notes",
-      content: "Key points from the linear equations lesson: Remember that the slope-intercept form is y = mx + b...",
-      subject: "Mathematics",
-      date: "2024-03-13",
-      tags: ["algebra", "equations", "math"],
-    },
-    {
-      id: 2,
-      title: "Variables and Constants",
-      content: "Variables can change, constants stay the same. Important to identify both in equations...",
-      subject: "Mathematics",
-      date: "2024-03-08",
-      tags: ["variables", "constants", "basics"],
-    },
-    {
-      id: 3,
-      title: "Shakespeare Analysis",
-      content: "Key themes in Hamlet: revenge, madness, mortality. Important quotes to remember...",
-      subject: "English",
-      date: "2024-03-10",
-      tags: ["shakespeare", "hamlet", "literature"],
-    },
-  ]
+  const notes = useMemo(() => {
+    const all = data?.notes ?? []
+    const q = search.trim().toLowerCase()
+    if (!q) return all
+    return all.filter(
+      (note) =>
+        note.title.toLowerCase().includes(q) ||
+        note.content.toLowerCase().includes(q) ||
+        note.tags.some((t) => t.toLowerCase().includes(q)),
+    )
+  }, [data, search])
 
-  const filteredNotes = notes.filter(
-    (note) =>
-      note.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      note.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      note.tags.some((tag) => tag.toLowerCase().includes(searchQuery.toLowerCase())),
-  )
+  const togglePin = async (note: NoteItem) => {
+    await apiMutate(`/api/notes/${note._id}`, "PATCH", { pinned: !note.pinned })
+    await refetch()
+  }
+
+  const remove = async (note: NoteItem) => {
+    const ok = await confirm({
+      title: "Delete this note?",
+      description: `"${note.title}" will be permanently removed. This cannot be undone.`,
+    })
+    if (!ok) return
+    await apiMutate(`/api/notes/${note._id}`, "DELETE")
+    await refetch()
+  }
 
   return (
-    <div className="container mx-auto p-6">
-      <div className="mb-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">My Notes</h1>
-            <p className="text-gray-600 mt-2">Personal study notes and annotations</p>
-          </div>
-          <Button onClick={() => router.push("/classrooms/notes/new")} className="bg-emerald-600 hover:bg-emerald-700">
-            <Plus className="h-4 w-4 mr-2" />
-            New Note
-          </Button>
+    <div className="container mx-auto space-y-6 p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-emerald-600">My notes</h1>
+          <p className="text-muted-foreground">Private to you — nobody else can see these.</p>
         </div>
+        <Button onClick={() => router.push("/classrooms/notes/new")}>
+          <Plus className="mr-2 h-4 w-4" />
+          New note
+        </Button>
       </div>
 
-      {/* Search */}
-      <div className="mb-6">
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
-          <Input
-            placeholder="Search notes..."
-            className="pl-10"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          className="pl-9"
+          placeholder="Search your notes…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
       </div>
 
-      {/* Notes Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredNotes.map((note) => (
-          <Card key={note.id} className="cursor-pointer hover:shadow-lg transition-shadow">
-            <CardHeader>
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <CardTitle className="text-lg mb-2">{note.title}</CardTitle>
-                  <div className="flex items-center gap-2 text-sm text-gray-500">
-                    <Calendar className="h-4 w-4" />
-                    <span>{new Date(note.date).toLocaleDateString()}</span>
+      <AsyncState
+        isLoading={isLoading}
+        error={error}
+        isEmpty={notes.length === 0}
+        emptyMessage={search ? "Nothing matches that search." : "No notes yet — write your first."}
+        onRetry={refetch}
+      >
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {notes.map((note) => (
+            <Card key={note._id} className="flex flex-col">
+              <CardHeader className="pb-3">
+                <div className="flex items-start justify-between gap-2">
+                  <CardTitle
+                    className="cursor-pointer text-base hover:text-emerald-600"
+                    onClick={() => router.push(`/classrooms/notes/${note._id}`)}
+                  >
+                    {note.title}
+                  </CardTitle>
+                  <div className="flex shrink-0 gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={note.pinned ? "text-emerald-600" : ""}
+                      onClick={() => void togglePin(note)}
+                    >
+                      <Pin className="h-4 w-4" />
+                      <span className="sr-only">{note.pinned ? "Unpin" : "Pin"}</span>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-red-600"
+                      onClick={() => void remove(note)}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span className="sr-only">Delete</span>
+                    </Button>
                   </div>
                 </div>
-                <Badge variant="outline">{note.subject}</Badge>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <p className="text-gray-600 text-sm mb-4 line-clamp-3">{note.content}</p>
-              <div className="flex flex-wrap gap-1 mb-4">
-                {note.tags.map((tag, index) => (
-                  <Badge key={index} variant="secondary" className="text-xs">
-                    {tag}
-                  </Badge>
-                ))}
-              </div>
-              <div className="flex items-center gap-2">
-                <Button size="sm" variant="outline" onClick={() => router.push(`/classrooms/notes/${note.id}`)}>
-                  <Edit className="h-3 w-3 mr-1" />
-                  Edit
-                </Button>
-                <Button size="sm" variant="outline">
-                  <Trash2 className="h-3 w-3 mr-1" />
-                  Delete
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {filteredNotes.length === 0 && (
-        <div className="text-center py-12">
-          <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No notes found</h3>
-          <p className="text-gray-600 mb-4">
-            {searchQuery ? "Try adjusting your search terms" : "Start by creating your first note"}
-          </p>
-          <Button onClick={() => router.push("/classrooms/notes/new")}>
-            <Plus className="h-4 w-4 mr-2" />
-            Create Note
-          </Button>
+                {note.course && (
+                  <p className="text-xs text-muted-foreground">{note.course.title}</p>
+                )}
+              </CardHeader>
+              <CardContent
+                className="flex flex-1 cursor-pointer flex-col justify-between gap-3"
+                onClick={() => router.push(`/classrooms/notes/${note._id}`)}
+              >
+                <p className="line-clamp-4 whitespace-pre-wrap text-sm text-muted-foreground">
+                  {note.content || "Empty note"}
+                </p>
+                <div className="flex flex-wrap items-center gap-1">
+                  {note.tags.map((tag) => (
+                    <Badge key={tag} variant="outline" className="text-xs">
+                      {tag}
+                    </Badge>
+                  ))}
+                  <span className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
+                    <StickyNote className="h-3 w-3" />
+                    {new Date(note.updatedAt).toLocaleDateString(undefined, { dateStyle: "medium" })}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
-      )}
+      </AsyncState>
+
+      {confirmDialog}
     </div>
   )
 }

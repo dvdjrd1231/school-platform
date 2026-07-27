@@ -31,6 +31,7 @@ export { CalendarEvent, EVENT_TYPES, type ICalendarEvent, type EventType } from 
 export { FileAsset, FILE_CONTEXTS, type IFileAsset, type FileContext } from "./FileAsset"
 export { Category, type ICategory } from "./Category"
 export { Group, type IGroup } from "./Group"
+export { Note, type INote } from "./Note"
 export {
   Attendance,
   ATTENDANCE_STATUSES,

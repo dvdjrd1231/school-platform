@@ -1,262 +1,152 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
+import { KeyRound, Loader2, LogOut, Moon, Sun, User } from "lucide-react"
+import { useTheme } from "next-themes"
+
+import { apiMutate } from "@/lib/api/client"
+import { useRole } from "@/components/context/role-context"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
-import { User, Bell, Shield, Palette, Globe } from "lucide-react"
 
+/**
+ * Settings: the things that genuinely belong to an account rather than a
+ * profile — your password, and how the app looks.
+ *
+ * Name, email, photo and contact details live on the profile page; duplicating
+ * them here would give two places to edit the same record.
+ */
 export function SettingsContent() {
-  const [notifications, setNotifications] = useState({
-    email: true,
-    push: false,
-    assignments: true,
-    grades: true,
-    announcements: true,
-  })
+  const router = useRouter()
+  const { userId, userName, currentRoles } = useRole()
+  const { theme, setTheme } = useTheme()
+
+  const [passwords, setPasswords] = useState({ next: "", confirm: "" })
+  const [saving, setSaving] = useState(false)
+  const [message, setMessage] = useState("")
+  const [error, setError] = useState("")
+
+  const changePassword = async () => {
+    setError("")
+    setMessage("")
+
+    if (passwords.next.length < 8) return setError("Your new password must be at least 8 characters")
+    if (passwords.next !== passwords.confirm) return setError("The two passwords don't match")
+    if (!userId) return setError("You need to be signed in")
+
+    setSaving(true)
+    try {
+      await apiMutate(`/api/users/${userId}`, "PATCH", { password: passwords.next })
+      setPasswords({ next: "", confirm: "" })
+      setMessage("Password changed. It applies the next time you sign in.")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not change your password")
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
-    <div className="container mx-auto p-6 max-w-4xl">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Settings</h1>
-        <p className="text-gray-600">Manage your account settings and preferences</p>
+    <div className="container mx-auto max-w-2xl space-y-6 p-6">
+      <div>
+        <h1 className="text-3xl font-bold text-emerald-600">Settings</h1>
+        <p className="text-muted-foreground">
+          Signed in as {userName ?? "you"} ({currentRoles.join(", ")})
+        </p>
       </div>
 
-      <Tabs defaultValue="profile" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="profile" className="flex items-center gap-2">
-            <User className="h-4 w-4" />
-            Profile
-          </TabsTrigger>
-          <TabsTrigger value="notifications" className="flex items-center gap-2">
-            <Bell className="h-4 w-4" />
-            Notifications
-          </TabsTrigger>
-          <TabsTrigger value="privacy" className="flex items-center gap-2">
-            <Shield className="h-4 w-4" />
-            Privacy
-          </TabsTrigger>
-          <TabsTrigger value="appearance" className="flex items-center gap-2">
-            <Palette className="h-4 w-4" />
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <User className="h-5 w-5" />
+            Your profile
+          </CardTitle>
+          <CardDescription>
+            Name, email, photo and contact details are all on your profile.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button variant="outline" onClick={() => router.push("/profile")}>
+            Open my profile
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <KeyRound className="h-5 w-5" />
+            Change password
+          </CardTitle>
+          <CardDescription>At least 8 characters.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label>New password</Label>
+            <Input
+              type="password"
+              value={passwords.next}
+              onChange={(e) => setPasswords((p) => ({ ...p, next: e.target.value }))}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Confirm new password</Label>
+            <Input
+              type="password"
+              value={passwords.confirm}
+              onChange={(e) => setPasswords((p) => ({ ...p, confirm: e.target.value }))}
+            />
+          </div>
+
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          {message && <p className="text-sm text-green-700">{message}</p>}
+
+          <Button onClick={() => void changePassword()} disabled={saving}>
+            {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Change password
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            {theme === "dark" ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
             Appearance
-          </TabsTrigger>
-          <TabsTrigger value="language" className="flex items-center gap-2">
-            <Globe className="h-4 w-4" />
-            Language
-          </TabsTrigger>
-        </TabsList>
+          </CardTitle>
+          <CardDescription>How the platform looks on this device.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Select value={theme ?? "system"} onValueChange={setTheme}>
+            <SelectTrigger className="w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="light">Light</SelectItem>
+              <SelectItem value="dark">Dark</SelectItem>
+              <SelectItem value="system">Match my device</SelectItem>
+            </SelectContent>
+          </Select>
+        </CardContent>
+      </Card>
 
-        <TabsContent value="profile">
-          <Card>
-            <CardHeader>
-              <CardTitle>Profile Information</CardTitle>
-              <CardDescription>Update your personal information and contact details</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="firstName">First Name</Label>
-                  <Input id="firstName" defaultValue="John" />
-                </div>
-                <div>
-                  <Label htmlFor="lastName">Last Name</Label>
-                  <Input id="lastName" defaultValue="Doe" />
-                </div>
-              </div>
-              <div>
-                <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" defaultValue="john.doe@example.com" />
-              </div>
-              <div>
-                <Label htmlFor="phone">Phone Number</Label>
-                <Input id="phone" type="tel" defaultValue="+1 (555) 123-4567" />
-              </div>
-              <div>
-                <Label htmlFor="bio">Bio</Label>
-                <Textarea id="bio" placeholder="Tell us about yourself..." />
-              </div>
-              <Button className="bg-emerald-600 hover:bg-emerald-700">Save Changes</Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="notifications">
-          <Card>
-            <CardHeader>
-              <CardTitle>Notification Preferences</CardTitle>
-              <CardDescription>Choose how you want to be notified about updates</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="email-notifications">Email Notifications</Label>
-                  <p className="text-sm text-gray-500">Receive notifications via email</p>
-                </div>
-                <Switch
-                  id="email-notifications"
-                  checked={notifications.email}
-                  onCheckedChange={(checked) => setNotifications((prev) => ({ ...prev, email: checked }))}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="push-notifications">Push Notifications</Label>
-                  <p className="text-sm text-gray-500">Receive push notifications in your browser</p>
-                </div>
-                <Switch
-                  id="push-notifications"
-                  checked={notifications.push}
-                  onCheckedChange={(checked) => setNotifications((prev) => ({ ...prev, push: checked }))}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="assignment-notifications">Assignment Updates</Label>
-                  <p className="text-sm text-gray-500">Get notified about new assignments and due dates</p>
-                </div>
-                <Switch
-                  id="assignment-notifications"
-                  checked={notifications.assignments}
-                  onCheckedChange={(checked) => setNotifications((prev) => ({ ...prev, assignments: checked }))}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="grade-notifications">Grade Updates</Label>
-                  <p className="text-sm text-gray-500">Get notified when grades are posted</p>
-                </div>
-                <Switch
-                  id="grade-notifications"
-                  checked={notifications.grades}
-                  onCheckedChange={(checked) => setNotifications((prev) => ({ ...prev, grades: checked }))}
-                />
-              </div>
-              <Button className="bg-emerald-600 hover:bg-emerald-700">Save Preferences</Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="privacy">
-          <Card>
-            <CardHeader>
-              <CardTitle>Privacy Settings</CardTitle>
-              <CardDescription>Control your privacy and data sharing preferences</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label htmlFor="profile-visibility">Profile Visibility</Label>
-                <Select defaultValue="friends">
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="public">Public</SelectItem>
-                    <SelectItem value="friends">Friends Only</SelectItem>
-                    <SelectItem value="private">Private</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="data-sharing">Data Sharing</Label>
-                <Select defaultValue="limited">
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="full">Full Sharing</SelectItem>
-                    <SelectItem value="limited">Limited Sharing</SelectItem>
-                    <SelectItem value="none">No Sharing</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button className="bg-emerald-600 hover:bg-emerald-700">Update Privacy Settings</Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="appearance">
-          <Card>
-            <CardHeader>
-              <CardTitle>Appearance</CardTitle>
-              <CardDescription>Customize the look and feel of your interface</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label htmlFor="theme">Theme</Label>
-                <Select defaultValue="light">
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="light">Light</SelectItem>
-                    <SelectItem value="dark">Dark</SelectItem>
-                    <SelectItem value="auto">Auto</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="font-size">Font Size</Label>
-                <Select defaultValue="medium">
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="small">Small</SelectItem>
-                    <SelectItem value="medium">Medium</SelectItem>
-                    <SelectItem value="large">Large</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button className="bg-emerald-600 hover:bg-emerald-700">Apply Changes</Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="language">
-          <Card>
-            <CardHeader>
-              <CardTitle>Language & Region</CardTitle>
-              <CardDescription>Set your preferred language and regional settings</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label htmlFor="language">Language</Label>
-                <Select defaultValue="en">
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="en">English</SelectItem>
-                    <SelectItem value="es">Spanish</SelectItem>
-                    <SelectItem value="fr">French</SelectItem>
-                    <SelectItem value="de">German</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="timezone">Timezone</Label>
-                <Select defaultValue="est">
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="est">Eastern Time (EST)</SelectItem>
-                    <SelectItem value="cst">Central Time (CST)</SelectItem>
-                    <SelectItem value="mst">Mountain Time (MST)</SelectItem>
-                    <SelectItem value="pst">Pacific Time (PST)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button className="bg-emerald-600 hover:bg-emerald-700">Save Settings</Button>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <LogOut className="h-5 w-5" />
+            Sign out
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Button variant="outline" onClick={() => router.push("/signout")}>
+            Sign out
+          </Button>
+        </CardContent>
+      </Card>
     </div>
   )
 }
