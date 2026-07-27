@@ -240,8 +240,10 @@ export default function HelpCenter() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Submit a Ticket</CardTitle>
-                <CardDescription>Describe your issue and we'll help you resolve it</CardDescription>
+                <CardTitle>Ask for help</CardTitle>
+                <CardDescription>
+                  Describe your issue and we&apos;ll help you resolve it
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">

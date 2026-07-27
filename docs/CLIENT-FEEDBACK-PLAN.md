@@ -1,91 +1,94 @@
-# Client feedback — triage and plan
+# Client feedback — what was done
 
-The client's review (24 Jul 2026) is a large list. It splits into three very
-different kinds of work, and it matters to keep them apart when scoping/quoting:
+The client's review of 24 Jul 2026 has been worked through in full. This document
+was originally a triage plan; it's now the record of what happened to each item.
 
-- **A. Wire-ups & fixes** — a screen exists but a button does nothing, because
-  that module was never connected. Small each; there are many.
-- **B. Extensions** — building on things already live (edit a user's role,
-  reassign a teacher, delete a class). Small–medium.
-- **C. New features** — genuinely new subsystems that were not in the original
-  scope (attendance, report cards, grade promotion, categories, a quiz engine,
-  digital-library uploads, profile photos, collecting enrollment PII, groups).
-  Medium–large; these should be quoted as new work.
-
-Original scope (all delivered): registration & user management, course/lesson
-management, assignment→submit→grade workflow, performance tracking, parent–teacher
-messaging + notifications, plus the Skills Report added mid-project. Almost
-everything below is **beyond** that scope.
+Everything below is **done and on the live database** unless marked otherwise.
+Two items are deliberately not built and are called out at the end.
 
 ---
 
-## B. Extensions — doing these first (small, high-value, answers the loudest questions)
+## Their questions, answered
 
-- [ ] **Change a user's role / edit any user** — Edit dialog in User Management
-      (name, email, role, status, role fields). *Answers: "how do I change role",
-      "edit all roles".*
-- [ ] **Reassign a class's teacher** — allow admin to change instructor on class
-      edit. *Answers: "unable to switch teachers", "how to assign teacher".*
-- [ ] **Delete a class** — hard delete when the class has no students/lessons,
-      otherwise block with a clear message; with confirmation. *Answers: "need a
-      delete button for classes".*
-- [ ] **Edit / delete / reassign a lesson** — extend Lesson Management.
-- [ ] **Confirmation before any delete** — shared confirm dialog, applied
-      everywhere destructive.
+| Question | Answer |
+|---|---|
+| How are announcements posted? | "New announcement" on the Announcements page, or from the classroom tab. School-wide or per class, with an audience and a priority. |
+| How do I edit a course already created? | Class Management › Edit. Everything except the course code, including the teacher. |
+| Open course is blank | It was reading sample data. It now loads the real course. |
+| Content dropdown doesn't show my new course | The dropdown was hard-coded sample data, duplicated per screen. There is now one shared live course list. |
+| Where are quizzes created? | The Quizzes page — "Create quiz". Practice problems are created from inside a lesson. |
+| How do I change someone's role? | User Management › Edit user. Role, status, password, and role-specific fields. |
+| Why "temporary password"? Does it email a reset? | It didn't, and the label was misleading. Nothing is emailed — see *Not built* below. |
+| When creating a class, what is the room? Is that the grade level? | No. Room is the physical classroom; grade level is now its own field and drives promotion. |
+| How do I know whose grades I'm looking at as a parent? | The student is named in a banner at the top, and the switcher stays visible. |
+| What are groups? How are they created? | Working groups inside a class — a teacher can split a class into them, or students can start their own. The 404 was a nav link pointing at a route that didn't exist. |
+| What exactly is Class List viewing and managing? | The roster: everyone enrolled, with details, progress link, messaging and CSV export. |
+| How is attendance taken and where is it viewed? | Admin › Attendance: a register per class per day, and a running record per student. |
+| How do I upload to the digital library? Is material assigned to lessons? | Teachers and admins upload; students read. Lesson materials attach to the lesson itself. |
+| What does "interactive" mean on a lesson? | A lesson type. Interactive lessons carry practice problems answered on the platform. |
 
-## A. Wire-ups & fixes — existing screens that aren't connected
+## Buttons that did nothing — now working
 
-Each is "the screen is a placeholder; make it real":
+Announcement reply · new discussion · post reply · edit/delete discussion ·
+add calendar event (classroom, school and admin) · play video · complete a
+lesson (and unlock the next) · view quiz results · e-portfolio add item ·
+My Media upload/view/download/delete · class gallery upload/preview/download ·
+digital library upload and preview · create survey · submit a survey ·
+"Tutor" (the tab was blank because the route didn't exist) · help-desk ticket
+(it logged to the console and claimed success; it now messages administrators).
 
-- [ ] Announcements — post/read (needs a small model + API + UI)
-- [ ] Course detail page ("Open course" is blank; content dropdown empty) — wire
-      to the real course + modules
-- [ ] Discussions — new discussion, reply, edit/delete
-- [ ] Classroom calendar / global calendar — add event
-- [ ] Quizzes — "view results", and see note in C (creation is a new engine)
-- [ ] E-portfolio — add item
-- [ ] My Media / Class Media Gallery — upload, view, download, delete (needs file
-      storage — see note)
-- [ ] Digital Library — upload, preview, assign to lessons
-- [ ] Surveys — create + assign (button dead today)
-- [ ] Tutor / Help — blank
-- [ ] Groups — 404, undefined feature; needs definition before building
-- [ ] "Play video" / interactive lesson steps / lesson completion unlock
-- [ ] Back button returns to the previous page
+## Extensions asked for
 
-## C. New features — quote as new work
+- **Edit any user, change roles** — done.
+- **Reassign a class's teacher** — done, admin-only, enforced server-side.
+- **Delete a class** — done; refused while it still has students or lessons, with
+  a message saying how many of each.
+- **Edit / delete / reassign a lesson** — done, including moving it to another
+  class (completion marks for it are cleared so nobody's progress is inflated).
+- **Lesson order** — shown explicitly, and lessons run in module order then
+  lesson order.
+- **Confirmation before deleting anything** — done, via one shared dialog. The
+  irreversible ones (deleting a class, a quiz with attempts, promoting a student)
+  additionally require typing to confirm.
+- **Back button returns to the previous page** — done.
+- **Clickable references** — class progress and the class list link through to
+  the course and to each student's progress summary.
 
-- [ ] **Attendance** — capture + view; client wants it tied to submissions.
-      New model, entry UI, reporting.
-- [ ] **Report cards / progress reports** — teacher uploads per quarter; parent
-      downloads. New model + file storage + two UIs.
-- [ ] **Grade-level promotion** — promote a student, revoke old-grade course
-      access, grant new; triple-confirmation. Touches enrollment + access rules.
-- [ ] **Categories/subcategories** (grade → subject → unit → lesson) for media,
-      library, portfolio, seminar; admin-editable taxonomy.
-- [ ] **Quiz/test engine** — author questions, students answer on-platform,
-      auto or manual grading. This is a whole module.
-- [ ] **Profile photos** — upload + edit, per user. Needs file storage.
-- [ ] **Enrollment PII** — phone, address, parents' names & contacts on the
-      student record; new fields + forms + privacy considerations.
-- [ ] **Parent multi-student switcher** — pick between children (partly there:
-      the data model already supports multiple children).
-- [ ] **Password reset emails** — "temporary password" should trigger a reset
-      email; needs an email provider.
+## New subsystems built
 
-### Cross-cutting dependency: file storage
-Media upload, library, portfolio, report cards, and profile photos all need
-somewhere to put files (e.g. S3 / Cloudflare R2 / UploadThing). That's a
-one-time setup decision that unblocks a whole column of items at once.
+- **Quiz/test engine** — five question types, automatic marking for four of
+  them, teacher marking for essays, attempts, time limits, results. Marking
+  happens server-side and the answer key never reaches the browser.
+- **Attendance** — register, record, and the client's rule that a rate only
+  counts once a student has handed something in.
+- **Report cards / progress reports** — teacher uploads per student per term;
+  the student and their linked guardians can download, and nobody else.
+- **Grade promotion** — closes the old grade's classes, opens the new grade's
+  active ones, with a dry run then two further confirmations.
+- **Categories/subcategories** — admin-editable, any depth, applied across media,
+  library, portfolio and seminars.
+- **File storage** — GridFS in the existing MongoDB, so no new service to run.
+  Whitelisted types, 50 MB cap, access decided in one place.
+- **Profile photos** — upload, replace, remove.
+- **Enrolment details** — phone, address, parent/guardian and emergency contacts.
+- **Parent multi-student switcher** — the /family page, remembered between visits.
+- **Groups**, **surveys**, **private notes** — all new.
 
----
+## Not built, deliberately
 
-## Suggested order
+**Fees and payments.** The template's page showed an invented balance and
+invented transactions behind a payment button wired to nothing. Fabricated
+financial figures are worse than an empty screen, and there is no billing
+subsystem to replace them with. The page now states that fees are handled by the
+school office. Real billing — invoices, a payment provider, refunds, receipts,
+an audit trail — is its own project.
 
-1. **B (extensions)** — quick, answers the recurring admin questions. *(in progress)*
-2. **A (wire-ups)** that need no file storage — announcements, course detail,
-   discussions, calendar events, confirmations, back button.
-3. **File-storage decision**, then the upload-dependent items (media, library,
-   portfolio, report cards, profile photos).
-4. **C (new subsystems)** — attendance, quiz engine, promotion, categories —
-   each scoped and quoted on its own.
+**Password-reset emails.** Nothing is emailed today; an admin sets a password and
+hands it over. Wiring this up is small work, but it needs an email provider
+chosen and its credentials configured on the server.
+
+## Where the mock data went
+
+`lib/database.ts` and the test-data viewer have been deleted. Nothing imports
+them, and keeping them around would only invite a screen to quietly go back to
+sample content.

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Award, BookOpen, Loader2, Mail, MapPin, Phone, Plus, Trash2, User as UserIcon } from "lucide-react"
+import { Award, BookOpen, Loader2, MapPin, Phone, Plus, Trash2, User as UserIcon } from "lucide-react"
 
 import { useApi } from "@/hooks/use-api"
 import { apiMutate } from "@/lib/api/client"

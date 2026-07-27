@@ -50,8 +50,10 @@ export async function GET(_req: Request, { params }: Params) {
     const completed = new Set((enrollment?.completedLessons ?? []).map(String))
     const flat = orderedLessons(course)
 
-    const module = modules[position]
-    const lessons = [...(module.lessons ?? [])]
+    // Named `current` rather than `module`: assigning to `module` shadows the
+    // CommonJS binding and Next flags it.
+    const current = modules[position]
+    const lessons = [...(current.lessons ?? [])]
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
       .map((lesson) => {
         const index = flat.findIndex((e) => String(e.lesson._id) === String(lesson._id))
@@ -67,7 +69,7 @@ export async function GET(_req: Request, { params }: Params) {
       modules[i] ? { _id: String(modules[i]._id), title: modules[i].title } : null
 
     return json({
-      module: { _id: String(module._id), title: module.title, description: module.description },
+      module: { _id: String(current._id), title: current.title, description: current.description },
       course: { _id: String(course._id), title: course.title, code: course.code },
       lessons,
       previous: sibling(position - 1),
