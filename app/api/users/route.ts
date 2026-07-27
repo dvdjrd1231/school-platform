@@ -2,6 +2,7 @@ import { z } from "zod"
 
 import { User, USER_ROLES, hashPassword } from "@/lib/models"
 import { ApiError, handleErrors, json, parseBody, requireRole } from "@/lib/api/helpers"
+import { contactFieldsSchema } from "@/lib/api/user-fields"
 
 export const runtime = "nodejs"
 
@@ -64,6 +65,8 @@ const createUserSchema = z.object({
   department: z.string().optional(),
   /** Student ids this user is a guardian for; only meaningful for parents. */
   children: z.array(z.string()).optional(),
+  // Contact details collected when enrolling a student.
+  ...contactFieldsSchema,
 })
 
 /** POST /api/users — admin-only creation, including staff and parent accounts. */

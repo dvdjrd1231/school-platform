@@ -4,6 +4,29 @@ import bcrypt from "bcryptjs"
 export const USER_ROLES = ["student", "teacher", "admin", "parent"] as const
 export type UserRole = (typeof USER_ROLES)[number]
 
+/**
+ * A parent or emergency contact recorded at enrolment.
+ *
+ * Kept separate from the `children` link: that connects two platform accounts,
+ * whereas this is contact detail for someone who may have no account at all.
+ */
+export interface IGuardianContact {
+  name: string
+  relationship?: string
+  phone?: string
+  email?: string
+  isEmergencyContact?: boolean
+}
+
+export interface IPostalAddress {
+  line1?: string
+  line2?: string
+  city?: string
+  state?: string
+  postalCode?: string
+  country?: string
+}
+
 export interface IUser extends Document {
   _id: Types.ObjectId
   name: string
@@ -12,6 +35,13 @@ export interface IUser extends Document {
   roles: UserRole[]
   status: "active" | "inactive"
   avatar?: string
+
+  // Contact details, collected at enrolment. Optional so existing accounts and
+  // staff records stay valid without a backfill.
+  phone?: string
+  address?: IPostalAddress
+  /** Parents/carers and emergency contacts named on the student's record. */
+  guardianContacts: IGuardianContact[]
 
   // Student-specific
   studentId?: string
@@ -58,6 +88,37 @@ const UserSchema = new Schema<IUser>(
     },
     status: { type: String, enum: ["active", "inactive"], default: "active" },
     avatar: String,
+
+    phone: String,
+    address: {
+      type: new Schema<IPostalAddress>(
+        {
+          line1: String,
+          line2: String,
+          city: String,
+          state: String,
+          postalCode: String,
+          country: String,
+        },
+        { _id: false },
+      ),
+      default: undefined,
+    },
+    guardianContacts: {
+      type: [
+        new Schema<IGuardianContact>(
+          {
+            name: { type: String, required: true, trim: true },
+            relationship: String,
+            phone: String,
+            email: String,
+            isEmergencyContact: { type: Boolean, default: false },
+          },
+          { _id: false },
+        ),
+      ],
+      default: [],
+    },
 
     studentId: { type: String, sparse: true, unique: true },
     gradeLevel: String,

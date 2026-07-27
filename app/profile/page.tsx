@@ -1,380 +1,458 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { Award, BookOpen, Loader2, Mail, MapPin, Phone, Plus, Trash2, User as UserIcon } from "lucide-react"
+
+import { useApi } from "@/hooks/use-api"
+import { apiMutate } from "@/lib/api/client"
+import { useRole } from "@/components/context/role-context"
+import { AvatarUploader } from "@/components/profile/avatar-uploader"
+import { AsyncState } from "@/components/ui/async-state"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Label } from "@/components/ui/label"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import {
-  User,
-  Mail,
-  Phone,
-  MapPin,
-  Calendar,
-  BookOpen,
-  Award,
-  Clock,
-  Edit,
-  Camera,
-  Bell,
-  Shield,
-  Key,
-} from "lucide-react"
 
+interface GuardianContact {
+  name: string
+  relationship?: string
+  phone?: string
+  email?: string
+  isEmergencyContact?: boolean
+}
+
+interface ProfileUser {
+  _id: string
+  name: string
+  email: string
+  roles: string[]
+  status: string
+  avatar?: string
+  phone?: string
+  bio?: string
+  officeHours?: string
+  subject?: string
+  department?: string
+  studentId?: string
+  gradeLevel?: string
+  enrollmentDate?: string
+  dateOfBirth?: string
+  address?: {
+    line1?: string
+    line2?: string
+    city?: string
+    state?: string
+    postalCode?: string
+    country?: string
+  }
+  guardianContacts?: GuardianContact[]
+  children?: { _id: string; name?: string; email?: string }[]
+}
+
+const EMPTY_GUARDIAN: GuardianContact = {
+  name: "",
+  relationship: "",
+  phone: "",
+  email: "",
+  isEmergencyContact: false,
+}
+
+/**
+ * Your own profile: photo, contact details, and — for a student — the parent
+ * and emergency contacts held on the record.
+ *
+ * Everything here was sample text for one fictional student. It now reads and
+ * writes the signed-in user's real record.
+ */
 export default function ProfilePage() {
-  const [isEditing, setIsEditing] = useState(false)
+  const { userId } = useRole()
+  const { data, error, isLoading, refetch } = useApi<ProfileUser>(
+    userId ? `/api/users/${userId}` : null,
+  )
 
-  const studentInfo = {
-    name: "Emma Johnson",
-    email: "emma.johnson@maatk12.edu",
-    studentId: "STU001",
-    grade: "10th Grade",
-    phone: "(555) 123-4567",
-    address: "123 Main St, Anytown, ST 12345",
-    enrollmentDate: "August 2023",
-    gpa: "3.7",
-    credits: "24",
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    bio: "",
+    officeHours: "",
+    line1: "",
+    line2: "",
+    city: "",
+    state: "",
+    postalCode: "",
+    country: "",
+  })
+  const [guardians, setGuardians] = useState<GuardianContact[]>([])
+  const [avatar, setAvatar] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState("")
+
+  useEffect(() => {
+    if (!data) return
+    setForm({
+      name: data.name,
+      email: data.email,
+      phone: data.phone ?? "",
+      bio: data.bio ?? "",
+      officeHours: data.officeHours ?? "",
+      line1: data.address?.line1 ?? "",
+      line2: data.address?.line2 ?? "",
+      city: data.address?.city ?? "",
+      state: data.address?.state ?? "",
+      postalCode: data.address?.postalCode ?? "",
+      country: data.address?.country ?? "",
+    })
+    setGuardians(data.guardianContacts ?? [])
+    setAvatar(data.avatar ?? "")
+  }, [data])
+
+  const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) => {
+    setForm((f) => ({ ...f, [key]: value }))
+    setSaved(false)
   }
 
-  const achievements = [
-    { title: "Honor Roll", date: "Fall 2023", type: "Academic" },
-    { title: "Perfect Attendance", date: "Fall 2023", type: "Attendance" },
-    { title: "Math Competition Winner", date: "October 2023", type: "Competition" },
-    { title: "Student Council Member", date: "2023-2024", type: "Leadership" },
-  ]
+  const setGuardian = (index: number, patch: Partial<GuardianContact>) => {
+    setGuardians((list) => list.map((g, i) => (i === index ? { ...g, ...patch } : g)))
+    setSaved(false)
+  }
 
-  const recentActivity = [
-    { action: "Submitted assignment", subject: "Mathematics 101", time: "2 hours ago" },
-    { action: "Completed quiz", subject: "English Literature", time: "1 day ago" },
-    { action: "Joined discussion", subject: "Biology Fundamentals", time: "2 days ago" },
-    { action: "Downloaded materials", subject: "World History", time: "3 days ago" },
-  ]
+  const save = async () => {
+    if (!userId) return
+    setSaving(true)
+    setSaveError("")
+    try {
+      await apiMutate(`/api/users/${userId}`, "PATCH", {
+        name: form.name.trim(),
+        email: form.email.trim(),
+        phone: form.phone.trim() || undefined,
+        bio: form.bio.trim() || undefined,
+        officeHours: form.officeHours.trim() || undefined,
+        address: {
+          line1: form.line1.trim() || undefined,
+          line2: form.line2.trim() || undefined,
+          city: form.city.trim() || undefined,
+          state: form.state.trim() || undefined,
+          postalCode: form.postalCode.trim() || undefined,
+          country: form.country.trim() || undefined,
+        },
+        // Drop half-filled rows: a contact with no name isn't a contact.
+        guardianContacts: guardians
+          .filter((g) => g.name.trim())
+          .map((g) => ({
+            name: g.name.trim(),
+            relationship: g.relationship?.trim() || undefined,
+            phone: g.phone?.trim() || undefined,
+            email: g.email?.trim() || undefined,
+            isEmergencyContact: g.isEmergencyContact ?? false,
+          })),
+      })
+      setSaved(true)
+      await refetch()
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Could not save your profile")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const isStudent = data?.roles.includes("student") ?? false
+  const isTeacher = data?.roles.includes("teacher") ?? false
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold text-gray-900">My Profile</h1>
-        <Button
-          variant={isEditing ? "default" : "outline"}
-          onClick={() => setIsEditing(!isEditing)}
-          className={isEditing ? "bg-emerald-600 hover:bg-emerald-700" : ""}
-        >
-          <Edit className="h-4 w-4 mr-2" />
-          {isEditing ? "Save Changes" : "Edit Profile"}
-        </Button>
+    <div className="container mx-auto space-y-6 p-6">
+      <div>
+        <h1 className="text-3xl font-bold text-emerald-600">My profile</h1>
+        <p className="text-muted-foreground">Your details, photo and contacts</p>
       </div>
 
-      <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="academic">Academic</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
-          <TabsTrigger value="privacy">Privacy</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="overview">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Profile Card */}
+      <AsyncState isLoading={isLoading} error={error} onRetry={refetch}>
+        {data && (
+          <div className="grid gap-6 lg:grid-cols-3">
             <Card className="lg:col-span-1">
-              <CardHeader className="text-center">
-                <div className="relative mx-auto">
-                  <Avatar className="h-24 w-24 mx-auto">
-                    <AvatarImage src="/placeholder.svg?height=96&width=96" />
-                    <AvatarFallback className="text-2xl">EJ</AvatarFallback>
-                  </Avatar>
-                  {isEditing && (
-                    <Button size="sm" className="absolute -bottom-2 -right-2 rounded-full h-8 w-8 p-0">
-                      <Camera className="h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-                <CardTitle className="mt-4">{studentInfo.name}</CardTitle>
-                <CardDescription>
-                  {studentInfo.grade} • {studentInfo.studentId}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <Mail className="h-4 w-4 text-gray-500" />
-                  <span className="text-sm">{studentInfo.email}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Phone className="h-4 w-4 text-gray-500" />
-                  <span className="text-sm">{studentInfo.phone}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <MapPin className="h-4 w-4 text-gray-500" />
-                  <span className="text-sm">{studentInfo.address}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Calendar className="h-4 w-4 text-gray-500" />
-                  <span className="text-sm">Enrolled {studentInfo.enrollmentDate}</span>
-                </div>
-              </CardContent>
-            </Card>
+              <CardContent className="flex flex-col items-center gap-4 pt-6">
+                <AvatarUploader
+                  userId={data._id}
+                  name={data.name}
+                  avatar={avatar}
+                  onChange={setAvatar}
+                />
 
-            {/* Main Content */}
-            <div className="lg:col-span-2 space-y-6">
-              {/* Academic Summary */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Academic Summary</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-emerald-600">{studentInfo.gpa}</div>
-                      <div className="text-sm text-gray-600">Current GPA</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-blue-600">{studentInfo.credits}</div>
-                      <div className="text-sm text-gray-600">Credits Earned</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold text-purple-600">5</div>
-                      <div className="text-sm text-gray-600">Current Classes</div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Recent Activity */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Recent Activity</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {recentActivity.map((activity, index) => (
-                      <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                        <div>
-                          <div className="font-medium text-sm">{activity.action}</div>
-                          <div className="text-sm text-gray-600">{activity.subject}</div>
-                        </div>
-                        <div className="flex items-center gap-1 text-xs text-gray-500">
-                          <Clock className="h-3 w-3" />
-                          {activity.time}
-                        </div>
-                      </div>
+                <div className="text-center">
+                  <h2 className="text-xl font-semibold">{data.name}</h2>
+                  <p className="text-sm text-muted-foreground">{data.email}</p>
+                  <div className="mt-2 flex flex-wrap justify-center gap-1">
+                    {data.roles.map((role) => (
+                      <Badge key={role} variant="secondary" className="capitalize">
+                        {role}
+                      </Badge>
                     ))}
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+
+                <div className="w-full space-y-2 border-t pt-4 text-sm">
+                  {data.studentId && (
+                    <p className="flex items-center gap-2">
+                      <UserIcon className="h-4 w-4 text-muted-foreground" />
+                      {data.studentId}
+                    </p>
+                  )}
+                  {data.gradeLevel && (
+                    <p className="flex items-center gap-2">
+                      <BookOpen className="h-4 w-4 text-muted-foreground" />
+                      {data.gradeLevel}
+                    </p>
+                  )}
+                  {data.subject && (
+                    <p className="flex items-center gap-2">
+                      <Award className="h-4 w-4 text-muted-foreground" />
+                      {data.subject}
+                    </p>
+                  )}
+                  {data.phone && (
+                    <p className="flex items-center gap-2">
+                      <Phone className="h-4 w-4 text-muted-foreground" />
+                      {data.phone}
+                    </p>
+                  )}
+                  {data.address?.city && (
+                    <p className="flex items-center gap-2">
+                      <MapPin className="h-4 w-4 text-muted-foreground" />
+                      {[data.address.city, data.address.state].filter(Boolean).join(", ")}
+                    </p>
+                  )}
+                  {data.enrollmentDate && (
+                    <p className="text-xs text-muted-foreground">
+                      Enrolled{" "}
+                      {new Date(data.enrollmentDate).toLocaleDateString(undefined, {
+                        dateStyle: "medium",
+                      })}
+                    </p>
+                  )}
+                </div>
+
+                {(data.children?.length ?? 0) > 0 && (
+                  <div className="w-full border-t pt-4">
+                    <p className="mb-2 text-sm font-medium">Linked students</p>
+                    {data.children?.map((child) => (
+                      <p key={child._id} className="text-sm text-muted-foreground">
+                        {child.name}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <div className="lg:col-span-2">
+              <Tabs defaultValue="details">
+                <TabsList>
+                  <TabsTrigger value="details">Details</TabsTrigger>
+                  <TabsTrigger value="address">Address</TabsTrigger>
+                  {isStudent && <TabsTrigger value="contacts">Parents &amp; contacts</TabsTrigger>}
+                </TabsList>
+
+                <TabsContent value="details" className="pt-4">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Your details</CardTitle>
+                      <CardDescription>
+                        Changing your email changes how you sign in.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label>Full name</Label>
+                          <Input value={form.name} onChange={(e) => set("name", e.target.value)} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Email</Label>
+                          <Input
+                            type="email"
+                            value={form.email}
+                            onChange={(e) => set("email", e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Phone</Label>
+                          <Input value={form.phone} onChange={(e) => set("phone", e.target.value)} />
+                        </div>
+                        {isTeacher && (
+                          <div className="space-y-2">
+                            <Label>Office hours</Label>
+                            <Input
+                              value={form.officeHours}
+                              onChange={(e) => set("officeHours", e.target.value)}
+                              placeholder="Tue & Thu, 3–4pm"
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>About</Label>
+                        <Textarea
+                          rows={4}
+                          value={form.bio}
+                          onChange={(e) => set("bio", e.target.value)}
+                        />
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                <TabsContent value="address" className="pt-4">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base">Home address</CardTitle>
+                      <CardDescription>Used for school correspondence.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label>Address line 1</Label>
+                        <Input value={form.line1} onChange={(e) => set("line1", e.target.value)} />
+                      </div>
+                      <div className="space-y-2 sm:col-span-2">
+                        <Label>Address line 2</Label>
+                        <Input value={form.line2} onChange={(e) => set("line2", e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>City</Label>
+                        <Input value={form.city} onChange={(e) => set("city", e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>State / county</Label>
+                        <Input value={form.state} onChange={(e) => set("state", e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Postcode / ZIP</Label>
+                        <Input
+                          value={form.postalCode}
+                          onChange={(e) => set("postalCode", e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Country</Label>
+                        <Input value={form.country} onChange={(e) => set("country", e.target.value)} />
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                {isStudent && (
+                  <TabsContent value="contacts" className="pt-4">
+                    <Card>
+                      <CardHeader>
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <CardTitle className="text-base">Parents and emergency contacts</CardTitle>
+                            <CardDescription>
+                              Who the school should contact. Only staff and this account can see
+                              these.
+                            </CardDescription>
+                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setGuardians((g) => [...g, { ...EMPTY_GUARDIAN }])}
+                          >
+                            <Plus className="mr-2 h-4 w-4" />
+                            Add contact
+                          </Button>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {guardians.length === 0 && (
+                          <p className="text-sm text-muted-foreground">
+                            No contacts recorded yet.
+                          </p>
+                        )}
+
+                        {guardians.map((guardian, index) => (
+                          <div key={index} className="space-y-3 rounded-md border p-3">
+                            <div className="grid gap-3 sm:grid-cols-2">
+                              <div className="space-y-2">
+                                <Label>Name</Label>
+                                <Input
+                                  value={guardian.name}
+                                  onChange={(e) => setGuardian(index, { name: e.target.value })}
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label>Relationship</Label>
+                                <Input
+                                  value={guardian.relationship ?? ""}
+                                  placeholder="Mother, Father, Guardian…"
+                                  onChange={(e) =>
+                                    setGuardian(index, { relationship: e.target.value })
+                                  }
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label>Phone</Label>
+                                <Input
+                                  value={guardian.phone ?? ""}
+                                  onChange={(e) => setGuardian(index, { phone: e.target.value })}
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label>Email</Label>
+                                <Input
+                                  type="email"
+                                  value={guardian.email ?? ""}
+                                  onChange={(e) => setGuardian(index, { email: e.target.value })}
+                                />
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                              <label className="flex items-center gap-2 text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={guardian.isEmergencyContact ?? false}
+                                  onChange={(e) =>
+                                    setGuardian(index, { isEmergencyContact: e.target.checked })
+                                  }
+                                />
+                                Emergency contact
+                              </label>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-red-600"
+                                onClick={() =>
+                                  setGuardians((list) => list.filter((_, i) => i !== index))
+                                }
+                              >
+                                <Trash2 className="mr-1 h-3.5 w-3.5" />
+                                Remove
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+                )}
+              </Tabs>
+
+              <div className="mt-4 flex items-center gap-3">
+                <Button onClick={() => void save()} disabled={saving}>
+                  {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Save changes
+                </Button>
+                {saved && <span className="text-sm text-green-700">Saved.</span>}
+                {saveError && <span className="text-sm text-red-600">{saveError}</span>}
+              </div>
             </div>
           </div>
-        </TabsContent>
-
-        <TabsContent value="academic">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Achievements */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Award className="h-5 w-5" />
-                  Achievements
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {achievements.map((achievement, index) => (
-                    <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
-                      <div>
-                        <div className="font-medium">{achievement.title}</div>
-                        <div className="text-sm text-gray-600">{achievement.date}</div>
-                      </div>
-                      <Badge variant="outline">{achievement.type}</Badge>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Current Classes */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <BookOpen className="h-5 w-5" />
-                  Current Classes
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between p-3 border rounded-lg">
-                    <div>
-                      <div className="font-medium">Mathematics 101</div>
-                      <div className="text-sm text-gray-600">Dr. Sarah Johnson</div>
-                    </div>
-                    <Badge className="bg-emerald-100 text-emerald-800">A-</Badge>
-                  </div>
-                  <div className="flex items-center justify-between p-3 border rounded-lg">
-                    <div>
-                      <div className="font-medium">English Literature</div>
-                      <div className="text-sm text-gray-600">Prof. Michael Brown</div>
-                    </div>
-                    <Badge className="bg-emerald-100 text-emerald-800">A-</Badge>
-                  </div>
-                  <div className="flex items-center justify-between p-3 border rounded-lg">
-                    <div>
-                      <div className="font-medium">Biology Fundamentals</div>
-                      <div className="text-sm text-gray-600">Dr. Emily Davis</div>
-                    </div>
-                    <Badge className="bg-blue-100 text-blue-800">B+</Badge>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="settings">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Personal Information */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <User className="h-5 w-5" />
-                  Personal Information
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="firstName">First Name</Label>
-                    <Input id="firstName" defaultValue="Emma" disabled={!isEditing} />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="lastName">Last Name</Label>
-                    <Input id="lastName" defaultValue="Johnson" disabled={!isEditing} />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input id="email" defaultValue={studentInfo.email} disabled={!isEditing} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Phone</Label>
-                  <Input id="phone" defaultValue={studentInfo.phone} disabled={!isEditing} />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="bio">Bio</Label>
-                  <Textarea id="bio" placeholder="Tell us about yourself..." disabled={!isEditing} />
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Notification Settings */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Bell className="h-5 w-5" />
-                  Notifications
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">Assignment Reminders</div>
-                    <div className="text-sm text-gray-600">Get notified about upcoming assignments</div>
-                  </div>
-                  <input type="checkbox" defaultChecked className="rounded" />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">Grade Updates</div>
-                    <div className="text-sm text-gray-600">Receive notifications when grades are posted</div>
-                  </div>
-                  <input type="checkbox" defaultChecked className="rounded" />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">Discussion Replies</div>
-                    <div className="text-sm text-gray-600">Get notified about replies to your posts</div>
-                  </div>
-                  <input type="checkbox" className="rounded" />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">Announcements</div>
-                    <div className="text-sm text-gray-600">Receive important school announcements</div>
-                  </div>
-                  <input type="checkbox" defaultChecked className="rounded" />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="privacy">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Security Settings */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Shield className="h-5 w-5" />
-                  Security
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="currentPassword">Current Password</Label>
-                  <Input id="currentPassword" type="password" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="newPassword">New Password</Label>
-                  <Input id="newPassword" type="password" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="confirmPassword">Confirm New Password</Label>
-                  <Input id="confirmPassword" type="password" />
-                </div>
-                <Button className="w-full bg-emerald-600 hover:bg-emerald-700">
-                  <Key className="h-4 w-4 mr-2" />
-                  Update Password
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* Privacy Settings */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Privacy Settings</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">Profile Visibility</div>
-                    <div className="text-sm text-gray-600">Who can see your profile information</div>
-                  </div>
-                  <select className="border rounded px-2 py-1">
-                    <option>Teachers Only</option>
-                    <option>Classmates</option>
-                    <option>Everyone</option>
-                  </select>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">Activity Status</div>
-                    <div className="text-sm text-gray-600">Show when you're online</div>
-                  </div>
-                  <input type="checkbox" defaultChecked className="rounded" />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="font-medium">Grade Sharing</div>
-                    <div className="text-sm text-gray-600">Allow parents to view grades</div>
-                  </div>
-                  <input type="checkbox" defaultChecked className="rounded" />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-      </Tabs>
+        )}
+      </AsyncState>
     </div>
   )
 }

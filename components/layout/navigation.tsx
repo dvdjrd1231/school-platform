@@ -72,6 +72,7 @@ const moreToolsItems = [
   { title: "E Portfolio", href: "/tools/portfolio", icon: FileText },
   { title: "My Media", href: "/tools/media", icon: FileText },
   { title: "Class Media Gallery", href: "/tools/gallery", icon: FileText },
+  { title: "Progress Reports", href: "/reports", icon: FileText },
   { title: "Seminar", href: "/tools/seminar", icon: GraduationCap },
 ]
 
@@ -94,14 +95,20 @@ const adminItems = [
 
 export function Navigation() {
   const pathname = usePathname()
-  const { isAdmin, isTeacher, currentRole } = useRole()
+  const { isAdmin, isParent } = useRole()
+
+  // Parents get their own entry point, since the class-facing tabs aren't
+  // theirs to work in.
+  const items = isParent
+    ? [{ title: "My Family", href: "/family", icon: Users }, ...navigationItems]
+    : navigationItems
 
   return (
     <nav className="border-b bg-card">
       <div className="container px-4">
         <div className="flex items-center justify-between h-12">
           <div className="flex items-center space-x-1">
-            {navigationItems.map((item) => {
+            {items.map((item) => {
               const Icon = item.icon
               return (
                 <Link key={item.href} href={item.href}>

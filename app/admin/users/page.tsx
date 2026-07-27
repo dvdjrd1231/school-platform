@@ -79,6 +79,14 @@ const EMPTY_FORM = {
   subject: "",
   department: "",
   status: "active" as "active" | "inactive",
+  // Enrolment details — collected for students.
+  phone: "",
+  addressLine1: "",
+  city: "",
+  postalCode: "",
+  guardianName: "",
+  guardianPhone: "",
+  guardianEmail: "",
 }
 
 export default function UserManagement() {
@@ -132,7 +140,12 @@ export default function UserManagement() {
 
   const openEdit = (user: ApiUser) => {
     setEditingId(user._id)
+    // The list endpoint doesn't carry the enrolment details, and this dialog
+    // isn't where they're maintained — the profile page is. Leaving them blank
+    // here keeps the edit from wiping what's already recorded, since blank
+    // values are omitted from the payload below.
     setForm({
+      ...EMPTY_FORM,
       name: user.name,
       email: user.email,
       role: primaryRole(user.roles),
@@ -166,6 +179,31 @@ export default function UserManagement() {
     }
     if (form.password) payload.password = form.password
     if (editingId) payload.status = form.status
+
+    // Enrolment details, only when something was actually typed — an empty
+    // address object would otherwise overwrite a record filled in elsewhere.
+    if (form.role === "student") {
+      if (form.phone.trim()) payload.phone = form.phone.trim()
+
+      const address = {
+        line1: form.addressLine1.trim() || undefined,
+        city: form.city.trim() || undefined,
+        postalCode: form.postalCode.trim() || undefined,
+      }
+      if (Object.values(address).some(Boolean)) payload.address = address
+
+      if (form.guardianName.trim()) {
+        payload.guardianContacts = [
+          {
+            name: form.guardianName.trim(),
+            relationship: "Parent/Guardian",
+            phone: form.guardianPhone.trim() || undefined,
+            email: form.guardianEmail.trim() || undefined,
+            isEmergencyContact: true,
+          },
+        ]
+      }
+    }
 
     setIsSubmitting(true)
     try {
@@ -307,14 +345,77 @@ export default function UserManagement() {
               </div>
 
               {form.role === "student" && (
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Grade Level (optional)</label>
-                  <Input
-                    placeholder="e.g. 10th"
-                    value={form.gradeLevel}
-                    onChange={(e) => setForm((f) => ({ ...f, gradeLevel: e.target.value }))}
-                  />
-                </div>
+                <>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium">Grade Level (optional)</label>
+                    <Input
+                      placeholder="e.g. 10th"
+                      value={form.gradeLevel}
+                      onChange={(e) => setForm((f) => ({ ...f, gradeLevel: e.target.value }))}
+                    />
+                  </div>
+
+                  {/* Enrolment details. Kept optional here so an account can be
+                      created quickly; the student or an admin can complete the
+                      record afterwards from the profile page. */}
+                  <div className="space-y-3 rounded-md border p-3">
+                    <p className="text-sm font-medium">Enrolment details</p>
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium">Phone</label>
+                      <Input
+                        value={form.phone}
+                        onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium">Address</label>
+                      <Input
+                        placeholder="Street"
+                        value={form.addressLine1}
+                        onChange={(e) => setForm((f) => ({ ...f, addressLine1: e.target.value }))}
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <Input
+                          placeholder="City"
+                          value={form.city}
+                          onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
+                        />
+                        <Input
+                          placeholder="Postcode / ZIP"
+                          value={form.postalCode}
+                          onChange={(e) => setForm((f) => ({ ...f, postalCode: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium">Parent / guardian</label>
+                      <Input
+                        placeholder="Full name"
+                        value={form.guardianName}
+                        onChange={(e) => setForm((f) => ({ ...f, guardianName: e.target.value }))}
+                      />
+                      <div className="grid grid-cols-2 gap-2">
+                        <Input
+                          placeholder="Phone"
+                          value={form.guardianPhone}
+                          onChange={(e) => setForm((f) => ({ ...f, guardianPhone: e.target.value }))}
+                        />
+                        <Input
+                          placeholder="Email"
+                          type="email"
+                          value={form.guardianEmail}
+                          onChange={(e) => setForm((f) => ({ ...f, guardianEmail: e.target.value }))}
+                        />
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        More contacts can be added on the student&apos;s profile.
+                      </p>
+                    </div>
+                  </div>
+                </>
               )}
               {form.role === "teacher" && (
                 <div className="space-y-2">

@@ -10,6 +10,7 @@ import {
   parseBody,
   requireUser,
 } from "@/lib/api/helpers"
+import { contactFieldsSchema } from "@/lib/api/user-fields"
 
 export const runtime = "nodejs"
 
@@ -46,8 +47,11 @@ const updateSchema = z.object({
   department: z.string().optional(),
   officeHours: z.string().optional(),
   bio: z.string().max(2000).optional(),
-  avatar: z.string().url().optional(),
+  // Avatars are served from our own API, so this is a path rather than a URL.
+  // "" clears the photo.
+  avatar: z.string().max(500).optional(),
   children: z.array(z.string()).optional(),
+  ...contactFieldsSchema,
 })
 
 /** PATCH /api/users/:id — own profile, or any profile for admins. */

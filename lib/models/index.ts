@@ -3,7 +3,15 @@
 // silently-then-loudly ("Schema hasn't been registered") if only some are
 // imported. Import from here rather than reaching into individual files.
 
-export { User, USER_ROLES, hashPassword, type IUser, type UserRole } from "./User"
+export {
+  User,
+  USER_ROLES,
+  hashPassword,
+  type IUser,
+  type UserRole,
+  type IGuardianContact,
+  type IPostalAddress,
+} from "./User"
 export { Course, type ICourse, type IModule, type ILessonItem } from "./Course"
 export { Enrollment, type IEnrollment } from "./Enrollment"
 export { Assignment, type IAssignment } from "./Assignment"
