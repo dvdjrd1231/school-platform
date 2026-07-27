@@ -22,6 +22,15 @@ export { Discussion, type IDiscussion, type IDiscussionReply } from "./Discussio
 export { CalendarEvent, EVENT_TYPES, type ICalendarEvent, type EventType } from "./CalendarEvent"
 export { FileAsset, FILE_CONTEXTS, type IFileAsset, type FileContext } from "./FileAsset"
 export { Category, type ICategory } from "./Category"
+export {
+  Quiz,
+  QUESTION_TYPES,
+  isAutoGradable,
+  type IQuiz,
+  type IQuizQuestion,
+  type QuestionType,
+} from "./Quiz"
+export { QuizAttempt, type IQuizAttempt, type IQuizAnswer } from "./QuizAttempt"
 export { Skill, type ISkill } from "./Skill"
 export {
   SkillAssessment,

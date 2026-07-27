@@ -1,365 +1,445 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { useRouter } from "next/navigation"
+import { AlertCircle, CheckCircle, Clock, Loader2, XCircle } from "lucide-react"
+
+import { useApi } from "@/hooks/use-api"
+import { apiMutate } from "@/lib/api/client"
+import { AsyncState } from "@/components/ui/async-state"
+import { BackButton } from "@/components/ui/back-button"
+import { useConfirm } from "@/components/ui/confirm-dialog"
 import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
-import { Textarea } from "@/components/ui/textarea"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
-import {
-  ArrowLeft,
-  ArrowRight,
-  Clock,
-  PlayCircle,
-  PauseCircle,
-  CheckCircle,
-  AlertTriangle,
-  Send,
-  BookOpen,
-} from "lucide-react"
-import Link from "next/link"
+import { Progress } from "@/components/ui/progress"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Textarea } from "@/components/ui/textarea"
 
-interface QuizTakingProps {
-  quizId: string
+type QuestionType =
+  | "multiple-choice"
+  | "multiple-select"
+  | "true-false"
+  | "short-answer"
+  | "essay"
+
+interface Question {
+  _id: string
+  prompt: string
+  type: QuestionType
+  options: string[]
+  points: number
+  order: number
 }
 
-const quizData = {
-  id: 2,
-  title: "Linear Equations Reading Comprehension",
-  type: "reading-video",
-  timeLimit: 45,
-  questions: [
-    {
-      id: 1,
-      type: "video-reading",
-      title: "Watch the Video and Read the Material",
-      videoUrl: "/educational-video-about-linear-equations.png",
-      readingMaterial: `
-        Linear equations are fundamental mathematical expressions that form straight lines when graphed. 
-        They follow the general form y = mx + b, where:
-        - m represents the slope of the line
-        - b represents the y-intercept
-        - x and y are variables
-        
-        Real-world applications of linear equations include:
-        1. Calculating costs and profits in business
-        2. Determining speed and distance in physics
-        3. Analyzing trends in data science
-        4. Planning budgets and financial projections
-      `,
-      question: "Based on the video and reading material, what does the 'm' represent in the equation y = mx + b?",
-      options: ["The y-intercept", "The slope of the line", "The x-coordinate", "The constant term"],
-      correctAnswer: 1,
-    },
-    {
-      id: 2,
-      type: "multiple-choice",
-      question: "Which of the following is a real-world application of linear equations mentioned in the material?",
-      options: [
-        "Calculating compound interest",
-        "Determining quadratic roots",
-        "Analyzing business costs and profits",
-        "Solving trigonometric problems",
-      ],
-      correctAnswer: 2,
-    },
-    {
-      id: 3,
-      type: "typing",
-      question:
-        "Explain in your own words how linear equations can be used in business planning. Provide a specific example.",
-      placeholder: "Write your explanation here... (minimum 100 words)",
-      minWords: 100,
-    },
-  ],
+interface QuizResponse {
+  _id: string
+  title: string
+  description?: string
+  kind: "quiz" | "test" | "practice"
+  questions: Question[]
+  timeLimit: number
+  attemptsAllowed: number
+  showAnswers: boolean
+  totalPoints: number
+  canEdit: boolean
+  canAttempt?: boolean
+  attemptsLeft?: number | null
 }
 
-export function QuizTaking({ quizId }: QuizTakingProps) {
-  const [currentQuestion, setCurrentQuestion] = useState(0)
-  const [answers, setAnswers] = useState<{ [key: number]: any }>({})
-  const [timeRemaining, setTimeRemaining] = useState(quizData.timeLimit * 60) // in seconds
-  const [isVideoPlaying, setIsVideoPlaying] = useState(false)
-  const [videoWatched, setVideoWatched] = useState(false)
-  const [isSubmitted, setIsSubmitted] = useState(false)
+interface SubmitResult {
+  attemptId: string
+  score: number
+  maxScore: number
+  percent: number
+  fullyGraded: boolean
+  answers: {
+    question: string
+    correct: boolean | null
+    earned: number | null
+    correctAnswers: string[]
+    explanation?: string
+  }[]
+}
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setTimeRemaining((prev) => {
-        if (prev <= 1) {
-          // Auto-submit when time runs out
-          handleSubmit()
-          return 0
-        }
-        return prev - 1
+/**
+ * Taking a quiz.
+ *
+ * Answers go to the server to be marked — the correct answers are never sent to
+ * the browser beforehand, so a student can't read them out of the page. When the
+ * time limit runs out the attempt submits itself rather than being lost.
+ */
+export function QuizTaking({ quizId }: { quizId: string }) {
+  const router = useRouter()
+  const { data, error, isLoading, refetch } = useApi<QuizResponse>(`/api/quizzes/${quizId}`)
+
+  const [answers, setAnswers] = useState<Record<string, string[]>>({})
+  const [index, setIndex] = useState(0)
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState("")
+  const [result, setResult] = useState<SubmitResult | null>(null)
+  const [remaining, setRemaining] = useState<number | null>(null)
+  const startedAt = useRef<Date>(new Date())
+  const [confirm, confirmDialog] = useConfirm()
+
+  const questions = useMemo(
+    () => [...(data?.questions ?? [])].sort((a, b) => a.order - b.order),
+    [data],
+  )
+
+  const submit = useRef<(auto?: boolean) => Promise<void>>(async () => {})
+
+  submit.current = async (auto = false) => {
+    if (!data || result) return
+
+    if (!auto) {
+      const unanswered = questions.filter((q) => (answers[q._id] ?? []).length === 0).length
+      const ok = await confirm({
+        title: "Submit your answers?",
+        description:
+          unanswered > 0
+            ? `${unanswered} question${unanswered === 1 ? " is" : "s are"} still unanswered. You can't change your answers after submitting.`
+            : "You can't change your answers after submitting.",
+        confirmLabel: "Submit",
+        destructive: false,
       })
-    }, 1000)
+      if (!ok) return
+    }
 
+    setSubmitting(true)
+    setSubmitError("")
+    try {
+      const submitted = await apiMutate<SubmitResult>(`/api/quizzes/${quizId}/attempts`, "POST", {
+        startedAt: startedAt.current.toISOString(),
+        answers: questions.map((q) => ({ question: q._id, response: answers[q._id] ?? [] })),
+      })
+      setResult(submitted)
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Could not submit your answers")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // Countdown for timed quizzes; auto-submits at zero so work isn't lost.
+  useEffect(() => {
+    if (!data || data.timeLimit <= 0 || result) return
+
+    const deadline = startedAt.current.getTime() + data.timeLimit * 60_000
+    const tick = () => {
+      const left = Math.max(0, Math.round((deadline - Date.now()) / 1000))
+      setRemaining(left)
+      if (left === 0) void submit.current(true)
+    }
+    tick()
+    const timer = setInterval(tick, 1000)
     return () => clearInterval(timer)
-  }, [])
+  }, [data, result])
 
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins}:${secs.toString().padStart(2, "0")}`
-  }
+  const setAnswer = (questionId: string, response: string[]) =>
+    setAnswers((a) => ({ ...a, [questionId]: response }))
 
-  const handleAnswerChange = (questionId: number, answer: any) => {
-    setAnswers((prev) => ({ ...prev, [questionId]: answer }))
-  }
+  const toggleMulti = (questionId: string, option: string) =>
+    setAnswers((a) => {
+      const current = a[questionId] ?? []
+      return {
+        ...a,
+        [questionId]: current.includes(option)
+          ? current.filter((o) => o !== option)
+          : [...current, option],
+      }
+    })
 
-  const handleSubmit = () => {
-    setIsSubmitted(true)
-    // Here you would typically send the answers to the server
-  }
+  if (result) {
+    const byQuestion = new Map(result.answers.map((a) => [a.question, a]))
 
-  const currentQ = quizData.questions[currentQuestion]
-  const progress = ((currentQuestion + 1) / quizData.questions.length) * 100
-
-  if (isSubmitted) {
     return (
-      <div className="flex-1 p-6 space-y-6">
+      <div className="container mx-auto max-w-3xl space-y-6 p-6">
         <Card>
-          <CardContent className="p-8 text-center">
-            <CheckCircle className="h-16 w-16 text-green-500 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold mb-2">Quiz Submitted Successfully!</h2>
-            <p className="text-muted-foreground mb-6">
-              Your answers have been recorded. Results will be available shortly.
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <CheckCircle className="h-6 w-6 text-green-600" />
+              Submitted
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <p className="text-3xl font-bold">
+              {result.score} / {result.maxScore}
+              <span className="ml-2 text-lg font-normal text-muted-foreground">
+                ({result.percent}%)
+              </span>
             </p>
-            <div className="flex gap-4 justify-center">
-              <Link href="/quizzes">
-                <Button variant="outline">Back to Quizzes</Button>
-              </Link>
-              <Button>View Results</Button>
-            </div>
+            {!result.fullyGraded && (
+              <p className="flex items-center gap-2 text-sm text-amber-700">
+                <AlertCircle className="h-4 w-4" />
+                Some answers need marking by your teacher, so this score may go up.
+              </p>
+            )}
+            <Progress value={result.percent} className="h-2" />
           </CardContent>
         </Card>
+
+        {result.answers.length > 0 && (
+          <div className="space-y-4">
+            <h2 className="text-lg font-semibold">Your answers</h2>
+            {questions.map((question, i) => {
+              const feedback = byQuestion.get(question._id)
+              const given = answers[question._id] ?? []
+
+              return (
+                <Card key={question._id}>
+                  <CardContent className="space-y-2 pt-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="font-medium">
+                        {i + 1}. {question.prompt}
+                      </p>
+                      {feedback?.correct === true && (
+                        <CheckCircle className="h-5 w-5 shrink-0 text-green-600" />
+                      )}
+                      {feedback?.correct === false && (
+                        <XCircle className="h-5 w-5 shrink-0 text-red-600" />
+                      )}
+                      {feedback?.correct === null && <Badge variant="outline">To be marked</Badge>}
+                    </div>
+
+                    <p className="text-sm">
+                      <span className="text-muted-foreground">Your answer: </span>
+                      {given.length > 0 ? given.join(", ") : <em>blank</em>}
+                    </p>
+
+                    {feedback?.correct === false && feedback.correctAnswers.length > 0 && (
+                      <p className="text-sm text-green-700">
+                        Correct answer: {feedback.correctAnswers.join(", ")}
+                      </p>
+                    )}
+                    {feedback?.explanation && (
+                      <p className="text-sm text-muted-foreground">{feedback.explanation}</p>
+                    )}
+                  </CardContent>
+                </Card>
+              )
+            })}
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          <Button onClick={() => router.push(`/quizzes/${quizId}/results`)}>
+            View all my results
+          </Button>
+          <Button variant="outline" onClick={() => router.push("/quizzes")}>
+            Back to quizzes
+          </Button>
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="flex-1 p-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link href="/quizzes">
-            <Button variant="outline" size="sm">
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Quizzes
-            </Button>
-          </Link>
-          <div>
-            <h1 className="text-2xl font-bold text-balance">{quizData.title}</h1>
-            <p className="text-muted-foreground">
-              Question {currentQuestion + 1} of {quizData.questions.length}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-4">
-          <div className="text-right">
-            <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-muted-foreground" />
-              <span className={`font-mono ${timeRemaining < 300 ? "text-red-600" : ""}`}>
-                {formatTime(timeRemaining)}
-              </span>
-            </div>
-            {timeRemaining < 300 && <p className="text-xs text-red-600">Time running out!</p>}
-          </div>
-        </div>
-      </div>
+    <div className="container mx-auto max-w-3xl space-y-6 p-6">
+      <BackButton fallback="/quizzes" label="Back to quizzes" />
 
-      {/* Progress */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">Progress</span>
-          <span className="text-sm text-muted-foreground">{Math.round(progress)}%</span>
-        </div>
-        <Progress value={progress} className="h-2" />
-      </div>
+      <AsyncState isLoading={isLoading} error={error} onRetry={refetch}>
+        {data && (
+          <>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h1 className="text-2xl font-bold text-emerald-700">{data.title}</h1>
+                {data.description && (
+                  <p className="text-muted-foreground">{data.description}</p>
+                )}
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {questions.length} question{questions.length === 1 ? "" : "s"} ·{" "}
+                  {data.totalPoints} points
+                  {data.attemptsLeft !== null && data.attemptsLeft !== undefined
+                    ? ` · ${data.attemptsLeft} attempt(s) left`
+                    : ""}
+                </p>
+              </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Main Question Area */}
-        <div className="lg:col-span-3">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Badge variant="outline">Question {currentQuestion + 1}</Badge>
-                {currentQ.type === "video-reading" && <BookOpen className="h-5 w-5" />}
-                {currentQ.title || currentQ.question}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Video Content */}
-              {currentQ.type === "video-reading" && (
-                <div className="space-y-4">
-                  <div className="aspect-video bg-muted rounded-lg flex items-center justify-center relative">
-                    <img
-                      src={currentQ.videoUrl || "/placeholder.svg"}
-                      alt="Educational video"
-                      className="w-full h-full object-cover rounded-lg"
-                    />
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <Button
-                        size="lg"
-                        onClick={() => {
-                          setIsVideoPlaying(!isVideoPlaying)
-                          if (!videoWatched) setVideoWatched(true)
-                        }}
-                      >
-                        {isVideoPlaying ? (
-                          <PauseCircle className="h-6 w-6 mr-2" />
-                        ) : (
-                          <PlayCircle className="h-6 w-6 mr-2" />
-                        )}
-                        {isVideoPlaying ? "Pause" : "Play"} Video
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="p-4 bg-muted/50 rounded-lg">
-                    <h4 className="font-medium mb-2">Reading Material</h4>
-                    <div className="prose prose-sm max-w-none">
-                      <pre className="whitespace-pre-wrap font-sans text-sm">{currentQ.readingMaterial}</pre>
-                    </div>
-                  </div>
-                </div>
+              {remaining !== null && (
+                <Badge
+                  variant={remaining < 60 ? "destructive" : "secondary"}
+                  className="flex items-center gap-1 text-base"
+                >
+                  <Clock className="h-4 w-4" />
+                  {String(Math.floor(remaining / 60)).padStart(2, "0")}:
+                  {String(remaining % 60).padStart(2, "0")}
+                </Badge>
               )}
+            </div>
 
-              {/* Question */}
-              <div className="space-y-4">
-                <h3 className="font-medium text-pretty">{currentQ.question}</h3>
-
-                {/* Multiple Choice */}
-                {(currentQ.type === "multiple-choice" || currentQ.type === "video-reading") && currentQ.options && (
-                  <RadioGroup
-                    value={answers[currentQ.id]?.toString() || ""}
-                    onValueChange={(value) => handleAnswerChange(currentQ.id, Number.parseInt(value))}
+            {data.canEdit && (
+              <Card>
+                <CardContent className="py-4 text-sm text-muted-foreground">
+                  You wrote this quiz, so you&apos;re seeing the student view. Teachers&apos;
+                  attempts aren&apos;t recorded — open{" "}
+                  <button
+                    type="button"
+                    className="underline"
+                    onClick={() => router.push(`/quizzes/${quizId}/results`)}
                   >
-                    {currentQ.options.map((option, index) => (
-                      <div key={index} className="flex items-center space-x-2">
-                        <RadioGroupItem value={index.toString()} id={`option-${index}`} />
-                        <Label htmlFor={`option-${index}`} className="flex-1 cursor-pointer">
-                          {option}
-                        </Label>
-                      </div>
-                    ))}
-                  </RadioGroup>
-                )}
+                    results
+                  </button>{" "}
+                  to see how the class did.
+                </CardContent>
+              </Card>
+            )}
 
-                {/* Typing Question */}
-                {currentQ.type === "typing" && (
-                  <div className="space-y-2">
-                    <Textarea
-                      placeholder={currentQ.placeholder}
-                      value={answers[currentQ.id] || ""}
-                      onChange={(e) => handleAnswerChange(currentQ.id, e.target.value)}
-                      className="min-h-32"
-                    />
-                    {currentQ.minWords && (
-                      <p className="text-xs text-muted-foreground">
-                        Word count: {(answers[currentQ.id] || "").split(" ").filter(Boolean).length} /{" "}
-                        {currentQ.minWords} minimum
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Sidebar */}
-        <div className="space-y-6">
-          {/* Question Navigation */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Questions</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-3 gap-2">
-                {quizData.questions.map((_, index) => (
-                  <Button
-                    key={index}
-                    variant={currentQuestion === index ? "default" : answers[index + 1] ? "outline" : "ghost"}
-                    size="sm"
-                    onClick={() => setCurrentQuestion(index)}
-                    className="relative"
-                  >
-                    {index + 1}
-                    {answers[index + 1] && <CheckCircle className="h-3 w-3 absolute -top-1 -right-1 text-green-500" />}
+            {data.canAttempt === false ? (
+              <Card>
+                <CardContent className="py-16 text-center">
+                  <p className="mb-4 text-muted-foreground">
+                    You&apos;ve used all your attempts at this quiz.
+                  </p>
+                  <Button onClick={() => router.push(`/quizzes/${quizId}/results`)}>
+                    View your results
                   </Button>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+                </CardContent>
+              </Card>
+            ) : questions.length === 0 ? (
+              <Card>
+                <CardContent className="py-16 text-center text-muted-foreground">
+                  This quiz has no questions yet.
+                </CardContent>
+              </Card>
+            ) : (
+              <>
+                <Progress
+                  value={((index + 1) / questions.length) * 100}
+                  className="h-1.5"
+                />
 
-          {/* Quiz Info */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Quiz Info</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex justify-between text-sm">
-                <span>Total Questions:</span>
-                <span>{quizData.questions.length}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span>Answered:</span>
-                <span>{Object.keys(answers).length}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span>Time Limit:</span>
-                <span>{quizData.timeLimit} minutes</span>
-              </div>
-            </CardContent>
-          </Card>
+                {questions.map((question, i) => {
+                  if (i !== index) return null
+                  const given = answers[question._id] ?? []
 
-          {/* Warnings */}
-          {currentQ.type === "video-reading" && !videoWatched && (
-            <Card className="border-yellow-200 bg-yellow-50">
-              <CardContent className="p-4">
-                <div className="flex items-start gap-2">
-                  <AlertTriangle className="h-4 w-4 text-yellow-600 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-medium text-yellow-800">Watch the Video</p>
-                    <p className="text-xs text-yellow-700">
-                      Please watch the instructional video before answering the question.
-                    </p>
+                  return (
+                    <Card key={question._id}>
+                      <CardHeader>
+                        <div className="flex items-start justify-between gap-3">
+                          <CardTitle className="text-lg">
+                            Question {i + 1} of {questions.length}
+                          </CardTitle>
+                          <Badge variant="outline">
+                            {question.points} pt{question.points === 1 ? "" : "s"}
+                          </Badge>
+                        </div>
+                        <p className="whitespace-pre-wrap text-base">{question.prompt}</p>
+                      </CardHeader>
+
+                      <CardContent className="space-y-3">
+                        {(question.type === "multiple-choice" ||
+                          question.type === "true-false") && (
+                          <RadioGroup
+                            value={given[0] ?? ""}
+                            onValueChange={(v) => setAnswer(question._id, [v])}
+                          >
+                            {question.options.map((option) => (
+                              <div key={option} className="flex items-center gap-2">
+                                <RadioGroupItem value={option} id={`${question._id}-${option}`} />
+                                <Label htmlFor={`${question._id}-${option}`} className="font-normal">
+                                  {option}
+                                </Label>
+                              </div>
+                            ))}
+                          </RadioGroup>
+                        )}
+
+                        {question.type === "multiple-select" && (
+                          <div className="space-y-2">
+                            {question.options.map((option) => (
+                              <div key={option} className="flex items-center gap-2">
+                                <Checkbox
+                                  id={`${question._id}-${option}`}
+                                  checked={given.includes(option)}
+                                  onCheckedChange={() => toggleMulti(question._id, option)}
+                                />
+                                <Label htmlFor={`${question._id}-${option}`} className="font-normal">
+                                  {option}
+                                </Label>
+                              </div>
+                            ))}
+                            <p className="text-xs text-muted-foreground">
+                              Tick every answer that applies.
+                            </p>
+                          </div>
+                        )}
+
+                        {question.type === "short-answer" && (
+                          <Textarea
+                            rows={2}
+                            value={given[0] ?? ""}
+                            onChange={(e) => setAnswer(question._id, [e.target.value])}
+                            placeholder="Type your answer"
+                          />
+                        )}
+
+                        {question.type === "essay" && (
+                          <>
+                            <Textarea
+                              rows={10}
+                              value={given[0] ?? ""}
+                              onChange={(e) => setAnswer(question._id, [e.target.value])}
+                              placeholder="Write your answer"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Your teacher marks this one by hand.
+                            </p>
+                          </>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )
+                })}
+
+                {submitError && <p className="text-sm text-red-600">{submitError}</p>}
+
+                <div className="flex items-center justify-between gap-3">
+                  <Button
+                    variant="outline"
+                    disabled={index === 0}
+                    onClick={() => setIndex((i) => i - 1)}
+                  >
+                    Previous
+                  </Button>
+
+                  <div className="flex flex-wrap justify-center gap-1">
+                    {questions.map((q, i) => (
+                      <button
+                        type="button"
+                        key={q._id}
+                        onClick={() => setIndex(i)}
+                        className={`h-7 w-7 rounded text-xs ${
+                          i === index
+                            ? "bg-emerald-600 text-white"
+                            : (answers[q._id] ?? []).length > 0
+                              ? "bg-emerald-100 text-emerald-800"
+                              : "bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        {i + 1}
+                      </button>
+                    ))}
                   </div>
+
+                  {index < questions.length - 1 ? (
+                    <Button onClick={() => setIndex((i) => i + 1)}>Next</Button>
+                  ) : (
+                    <Button onClick={() => void submit.current()} disabled={submitting}>
+                      {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                      Submit
+                    </Button>
+                  )}
                 </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      </div>
+              </>
+            )}
+          </>
+        )}
+      </AsyncState>
 
-      {/* Navigation */}
-      <div className="flex items-center justify-between">
-        <Button
-          variant="outline"
-          onClick={() => setCurrentQuestion(Math.max(0, currentQuestion - 1))}
-          disabled={currentQuestion === 0}
-        >
-          <ArrowLeft className="h-4 w-4 mr-2" />
-          Previous
-        </Button>
-
-        <div className="flex gap-2">
-          {currentQuestion < quizData.questions.length - 1 ? (
-            <Button onClick={() => setCurrentQuestion(currentQuestion + 1)}>
-              Next
-              <ArrowRight className="h-4 w-4 ml-2" />
-            </Button>
-          ) : (
-            <Button onClick={handleSubmit} className="bg-green-600 hover:bg-green-700">
-              <Send className="h-4 w-4 mr-2" />
-              Submit Quiz
-            </Button>
-          )}
-        </div>
-      </div>
+      {confirmDialog}
     </div>
   )
 }

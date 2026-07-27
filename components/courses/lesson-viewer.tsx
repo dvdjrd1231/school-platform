@@ -23,6 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { LessonEditorDialog } from "@/components/courses/lesson-editor-dialog"
 import { VideoPlayer } from "@/components/courses/video-player"
+import { LessonPractice } from "@/components/quizzes/lesson-practice"
 import type { ApiLesson } from "@/components/courses/course-modules"
 
 interface LessonResponse {
@@ -192,6 +193,8 @@ export function LessonViewer({ courseId, lessonId }: { courseId: string; lessonI
                     </CardContent>
                   </Card>
                 )}
+
+                <LessonPractice courseId={courseId} lessonId={lessonId} />
 
                 {actionError && <p className="text-sm text-red-600">{actionError}</p>}
 
