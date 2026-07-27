@@ -235,17 +235,44 @@ A healthy response looks like:
 and sign in with `ADMIN_USER` / `ADMIN_PASSWORD` — the admin account is created
 on that first sign-in, and you land on `/admin`.
 
-### Optional: demo data
+### Demo data: how to check for it, and remove it
 
-To load sample courses, students, and assignments:
+Seeding is **refused in production** — the routine inserts fictional students
+and, with `reset`, deletes every real user, course and submission first. Both
+`/api/seed` and `pnpm seed` decline when `NODE_ENV=production`. Create real
+accounts from **Admin → User Management** instead.
+
+If the database was seeded before that guard existed, the demo accounts are
+still there, sitting alongside genuine records and looking entirely plausible.
+To check:
 
 ```bash
-docker compose exec app node -e "require('./scripts/seed.js')" 2>/dev/null \
-  || echo "Use the admin panel to create real data instead."
+cd ~/school-platform
+set -a; . ./.env; set +a          # load MONGO_ROOT_USER / ADMIN_USER
+
+docker compose exec -T mongo mongosh \
+  -u "$MONGO_ROOT_USER" -p "$MONGO_ROOT_PASSWORD" --authenticationDatabase admin \
+  school-platform --quiet --file /scripts/demo-data.mongo.js
 ```
 
-Prefer creating real accounts from **Admin → User Management**; the seed exists
-for development.
+That only reports. It matches the seeder's exact email addresses, so a real
+person with a similar name is never caught. To actually delete them:
+
+```bash
+docker compose exec -T -e REMOVE=true -e ADMIN_EMAIL="$ADMIN_USER" mongo mongosh \
+  -u "$MONGO_ROOT_USER" -p "$MONGO_ROOT_PASSWORD" --authenticationDatabase admin \
+  school-platform --quiet --file /scripts/demo-data.mongo.js
+```
+
+> `ADMIN_EMAIL="$ADMIN_USER"` matters. The seeder's admin is
+> `admin@maatk12.edu`, which is also the default `ADMIN_USER`. If you kept that
+> default, that account is *your* administrator — passing this spares it.
+
+Take a backup first (see *Backups* below); the removal cascades to those
+accounts' courses, assignments, submissions, messages and notifications.
+
+On a development machine the same job is `pnpm check-demo-data`, and
+`pnpm check-demo-data --remove` to act on it.
 
 ---
 

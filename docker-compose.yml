@@ -17,6 +17,11 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?set MONGO_ROOT_PASSWORD in .env}
     volumes:
       - mongo-data:/data/db
+      # Read-only, so maintenance scripts can be run with mongosh inside the
+      # container without copying files in by hand. Nothing here executes on
+      # its own — /docker-entrypoint-initdb.d is the auto-run path, and this
+      # deliberately isn't it.
+      - ./scripts:/scripts:ro
     # Deliberately no `ports:` — the database is reachable only from the
     # compose network, never from the public internet.
     healthcheck:

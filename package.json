@@ -10,6 +10,7 @@
     "start": "next start",
     "seed": "tsx scripts/seed.ts",
     "seed:reset": "tsx scripts/seed.ts --reset",
+    "check-demo-data": "tsx scripts/check-demo-data.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

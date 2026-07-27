@@ -5,22 +5,38 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 /**
- * POST /api/seed — one-time bootstrap of the initial accounts and demo data.
+ * POST /api/seed — one-time bootstrap of demo accounts and sample content, for
+ * a scratch database only.
  *
- * Guarded by the SEED_SECRET environment variable: the request must present a
- * matching secret, and the routine itself refuses to run once any user exists.
- * Both are required — the secret stops a stranger from seeding, and the
- * user-count check stops a second run from wiping real data.
+ * Three independent guards, because this endpoint inserts fictional students
+ * and — with `reset` — deletes every user, course, submission and message
+ * first:
  *
- * Usage (once, after setting SEED_SECRET in Vercel):
- *   curl -X POST https://<your-app>/api/seed \
+ *   1. Refused outright in production (see below). A live deployment should
+ *      never be one leaked secret away from having its data wiped.
+ *   2. Requires SEED_SECRET to be set and presented.
+ *   3. seedDatabase() itself refuses when any user already exists, unless
+ *      explicitly reset.
+ *
+ * Usage on a development database:
+ *   curl -X POST http://localhost:3000/api/seed \
  *        -H "Authorization: Bearer $SEED_SECRET"
- *
- * Add ?reset=true to wipe and reseed (also requires the secret). Remove the
- * SEED_SECRET variable afterwards to disable the endpoint entirely.
  */
 export async function POST(req: Request) {
   try {
+    // Checked before the secret so a production deployment gives a clear answer
+    // rather than inviting someone to go hunting for the right token.
+    if (process.env.NODE_ENV === "production" && process.env.ALLOW_PRODUCTION_SEED !== "true") {
+      return json(
+        {
+          error:
+            "Seeding is disabled in production. This endpoint creates demo accounts and can " +
+            "delete real data; it is for development databases only.",
+        },
+        403,
+      )
+    }
+
     const secret = process.env.SEED_SECRET
     if (!secret) {
       return json(

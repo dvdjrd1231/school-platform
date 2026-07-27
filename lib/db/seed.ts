@@ -37,6 +37,23 @@ function daysFromNow(days: number): Date {
 
 export async function seedDatabase(options: { reset?: boolean } = {}): Promise<SeedResult> {
   const { reset = false } = options
+
+  // Hard refusal in production, whatever the caller passes.
+  //
+  // This routine inserts demo accounts and, with `reset`, deletes every user,
+  // course, submission and message first. That is right for a scratch database
+  // and catastrophic against a live one. The guard lives here rather than only
+  // in the API route so it also covers `pnpm seed` / `pnpm seed:reset` run with
+  // production credentials in the environment.
+  if (process.env.NODE_ENV === "production" && process.env.ALLOW_PRODUCTION_SEED !== "true") {
+    return {
+      seeded: false,
+      reason:
+        "Seeding is refused in production: it inserts demo accounts, and reset deletes all real data. " +
+        "Set ALLOW_PRODUCTION_SEED=true only if you are certain the database is empty.",
+    }
+  }
+
   await connectDB()
 
   if (reset) {
