@@ -1,312 +1,434 @@
 "use client"
 
 import { useState } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Button } from "@/components/ui/button"
+import { Loader2, LogOut, Pencil, Plus, Trash2, UserPlus, Users } from "lucide-react"
+
+import { useApi } from "@/hooks/use-api"
+import { apiMutate } from "@/lib/api/client"
+import { useCourses } from "@/components/context/course-context"
+import { useRole } from "@/components/context/role-context"
+import { AsyncState } from "@/components/ui/async-state"
+import { useConfirm } from "@/components/ui/confirm-dialog"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Search, Users, Plus, MessageCircle, Calendar, Settings, UserPlus, Crown, Clock } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Textarea } from "@/components/ui/textarea"
 
+interface Member {
+  _id: string
+  name?: string
+  email?: string
+}
+
+interface GroupItem {
+  _id: string
+  name: string
+  description?: string
+  maxMembers: number
+  joinPolicy: "open" | "closed"
+  members: Member[]
+  memberCount: number
+  isMember: boolean
+  isOwner: boolean
+  createdBy?: { name?: string } | null
+  course?: { _id: string; title: string } | null
+}
+
+function initials(name?: string): string {
+  if (!name) return "?"
+  return name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("")
+}
+
+interface GroupForm {
+  name: string
+  description: string
+  course: string
+  maxMembers: number
+  joinPolicy: "open" | "closed"
+}
+
+const EMPTY: GroupForm = {
+  name: "",
+  description: "",
+  course: "",
+  maxMembers: 0,
+  joinPolicy: "open",
+}
+
+/**
+ * Study groups.
+ *
+ * The page was empty and its nav link 404'd, and the client reasonably asked
+ * what groups even were. They're working groups inside a class: a teacher can
+ * split a class into them, or students can start their own. Open groups anyone
+ * in the class can join; closed ones the owner manages.
+ */
 export default function GroupsPage() {
-  const [searchTerm, setSearchTerm] = useState("")
+  const { isTeacher, isAdmin } = useRole()
+  const { courses, selectedId, select } = useCourses()
+  const canModerate = isTeacher || isAdmin
 
-  const myGroups = [
-    {
-      id: 1,
-      name: "Mathematics Study Group",
-      subject: "Mathematics",
-      members: 12,
-      role: "Member",
-      lastActivity: "2 hours ago",
-      description: "Weekly study sessions for Mathematics 101",
-      avatar: "/placeholder.svg?height=40&width=40",
-    },
-    {
-      id: 2,
-      name: "Biology Lab Partners",
-      subject: "Biology",
-      members: 8,
-      role: "Admin",
-      lastActivity: "1 day ago",
-      description: "Collaboration group for biology lab assignments",
-      avatar: "/placeholder.svg?height=40&width=40",
-    },
-    {
-      id: 3,
-      name: "English Literature Discussion",
-      subject: "English",
-      members: 15,
-      role: "Member",
-      lastActivity: "3 days ago",
-      description: "Discuss readings and share insights",
-      avatar: "/placeholder.svg?height=40&width=40",
-    },
-  ]
+  const { data, error, isLoading, refetch } = useApi<{ groups: GroupItem[] }>(
+    selectedId ? `/api/groups?courseId=${selectedId}` : "/api/groups",
+  )
+  const groups = data?.groups ?? []
 
-  const availableGroups = [
-    {
-      id: 4,
-      name: "Chemistry Help Desk",
-      subject: "Chemistry",
-      members: 24,
-      description: "Get help with chemistry problems and concepts",
-      avatar: "/placeholder.svg?height=40&width=40",
-    },
-    {
-      id: 5,
-      name: "History Debate Club",
-      subject: "History",
-      members: 18,
-      description: "Engage in historical debates and discussions",
-      avatar: "/placeholder.svg?height=40&width=40",
-    },
-    {
-      id: 6,
-      name: "Physics Problem Solvers",
-      subject: "Physics",
-      members: 16,
-      description: "Collaborative problem-solving for physics courses",
-      avatar: "/placeholder.svg?height=40&width=40",
-    },
-  ]
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [form, setForm] = useState<GroupForm>(EMPTY)
+  const [formError, setFormError] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [confirm, confirmDialog] = useConfirm()
 
-  const recentActivity = [
-    {
-      group: "Mathematics Study Group",
-      user: "Sarah Johnson",
-      action: "shared a study guide",
-      time: "2 hours ago",
-    },
-    {
-      group: "Biology Lab Partners",
-      user: "Michael Chen",
-      action: "posted lab results",
-      time: "5 hours ago",
-    },
-    {
-      group: "English Literature Discussion",
-      user: "Emma Wilson",
-      action: "started a discussion about Hamlet",
-      time: "1 day ago",
-    },
-  ]
-
-  const getRoleIcon = (role: string) => {
-    return role === "Admin" ? <Crown className="h-4 w-4 text-yellow-600" /> : null
+  const openCreate = () => {
+    setEditingId(null)
+    setForm({ ...EMPTY, course: selectedId ?? "" })
+    setFormError("")
+    setDialogOpen(true)
   }
 
-  const getRoleBadge = (role: string) => {
-    return role === "Admin" ? (
-      <Badge className="bg-yellow-100 text-yellow-800">Admin</Badge>
-    ) : (
-      <Badge variant="outline">Member</Badge>
-    )
+  const openEdit = (group: GroupItem) => {
+    setEditingId(group._id)
+    setForm({
+      name: group.name,
+      description: group.description ?? "",
+      course: group.course?._id ?? "",
+      maxMembers: group.maxMembers,
+      joinPolicy: group.joinPolicy,
+    })
+    setFormError("")
+    setDialogOpen(true)
+  }
+
+  const save = async () => {
+    setFormError("")
+    if (form.name.trim().length < 2) return setFormError("Give the group a name")
+    if (!editingId && !form.course) return setFormError("Choose which class this group is for")
+
+    setSaving(true)
+    try {
+      if (editingId) {
+        await apiMutate(`/api/groups/${editingId}`, "PATCH", {
+          name: form.name.trim(),
+          description: form.description.trim() || undefined,
+          maxMembers: Number(form.maxMembers) || 0,
+          joinPolicy: form.joinPolicy,
+        })
+      } else {
+        await apiMutate("/api/groups", "POST", {
+          name: form.name.trim(),
+          description: form.description.trim() || undefined,
+          course: form.course,
+          maxMembers: Number(form.maxMembers) || 0,
+          joinPolicy: form.joinPolicy,
+        })
+      }
+      setDialogOpen(false)
+      await refetch()
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "Could not save the group")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const membership = async (group: GroupItem, action: "join" | "leave") => {
+    setBusyId(group._id)
+    try {
+      await apiMutate(`/api/groups/${group._id}`, "POST", { action })
+      await refetch()
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Could not update your membership")
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const removeMember = async (group: GroupItem, member: Member) => {
+    const ok = await confirm({
+      title: `Remove ${member.name ?? "this member"}?`,
+      description: `They'll be taken out of "${group.name}". They can be added back later.`,
+      confirmLabel: "Remove",
+    })
+    if (!ok) return
+    await apiMutate(`/api/groups/${group._id}`, "POST", { action: "leave", userId: member._id })
+    await refetch()
+  }
+
+  const remove = async (group: GroupItem) => {
+    const ok = await confirm({
+      title: `Delete "${group.name}"?`,
+      description: `The group and its ${group.memberCount} member(s) will be removed. This cannot be undone.`,
+    })
+    if (!ok) return
+    await apiMutate(`/api/groups/${group._id}`, "DELETE")
+    await refetch()
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
+    <div className="container mx-auto space-y-6 p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Study Groups</h1>
-          <p className="text-gray-600 mt-1">Collaborate with classmates and join study groups</p>
+          <h1 className="text-3xl font-bold text-emerald-600">Groups</h1>
+          <p className="text-muted-foreground">
+            Working groups inside a class. Teachers can split a class into groups, or students can
+            start their own.
+          </p>
         </div>
-        <Button className="bg-emerald-600 hover:bg-emerald-700">
-          <Plus className="h-4 w-4 mr-2" />
-          Create Group
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="w-56">
+            <Select value={selectedId ?? undefined} onValueChange={select}>
+              <SelectTrigger>
+                <SelectValue placeholder="Choose a class" />
+              </SelectTrigger>
+              <SelectContent>
+                {courses.map((c) => (
+                  <SelectItem key={c._id} value={c._id}>
+                    {c.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button onClick={openCreate}>
+            <Plus className="mr-2 h-4 w-4" />
+            New group
+          </Button>
+        </div>
       </div>
 
-      {/* Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">My Groups</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">3</div>
-            <p className="text-xs text-muted-foreground">Active memberships</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Members</CardTitle>
-            <UserPlus className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">35</div>
-            <p className="text-xs text-muted-foreground">Across all groups</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Messages</CardTitle>
-            <MessageCircle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">127</div>
-            <p className="text-xs text-muted-foreground">This week</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Study Sessions</CardTitle>
-            <Calendar className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">8</div>
-            <p className="text-xs text-muted-foreground">Scheduled this month</p>
-          </CardContent>
-        </Card>
-      </div>
+      <AsyncState
+        isLoading={isLoading}
+        error={error}
+        isEmpty={groups.length === 0}
+        emptyMessage="No groups in this class yet — create the first one."
+        onRetry={refetch}
+      >
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {groups.map((group) => {
+            const full = group.maxMembers > 0 && group.memberCount >= group.maxMembers
+            const canManage = group.isOwner || canModerate
 
-      <Tabs defaultValue="my-groups" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="my-groups">My Groups</TabsTrigger>
-          <TabsTrigger value="discover">Discover</TabsTrigger>
-          <TabsTrigger value="activity">Recent Activity</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="my-groups">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {myGroups.map((group) => (
-              <Card key={group.id} className="hover:shadow-md transition-shadow">
-                <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <Avatar>
-                      <AvatarImage src={group.avatar || "/placeholder.svg"} />
-                      <AvatarFallback>{group.name.charAt(0)}</AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <CardTitle className="text-lg truncate">{group.name}</CardTitle>
-                      <CardDescription>{group.subject}</CardDescription>
+            return (
+              <Card key={group._id}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <CardTitle className="text-lg">{group.name}</CardTitle>
+                      <p className="text-sm text-muted-foreground">
+                        {group.course?.title} · started by {group.createdBy?.name ?? "someone"}
+                      </p>
                     </div>
-                    {getRoleIcon(group.role)}
+                    <Badge variant={group.joinPolicy === "open" ? "default" : "secondary"}>
+                      {group.joinPolicy}
+                    </Badge>
                   </div>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <p className="text-sm text-gray-600">{group.description}</p>
 
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Users className="h-4 w-4 text-gray-500" />
-                      <span className="text-sm">{group.members} members</span>
-                    </div>
-                    {getRoleBadge(group.role)}
+                <CardContent className="space-y-3">
+                  {group.description && (
+                    <p className="text-sm text-muted-foreground">{group.description}</p>
+                  )}
+
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Users className="h-4 w-4" />
+                    {group.memberCount}
+                    {group.maxMembers > 0 ? ` / ${group.maxMembers}` : ""} member
+                    {group.memberCount === 1 ? "" : "s"}
                   </div>
 
-                  <div className="flex items-center gap-1 text-xs text-gray-500">
-                    <Clock className="h-3 w-3" />
-                    Last activity {group.lastActivity}
+                  <div className="flex flex-wrap gap-2">
+                    {group.members.map((member) => (
+                      <div
+                        key={member._id}
+                        className="flex items-center gap-1 rounded-full border px-2 py-1 text-xs"
+                      >
+                        <Avatar className="h-5 w-5">
+                          <AvatarFallback className="text-[10px]">
+                            {initials(member.name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        {member.name ?? "Unknown"}
+                        {canManage && (
+                          <button
+                            type="button"
+                            className="ml-1 text-red-600"
+                            onClick={() => void removeMember(group, member)}
+                            aria-label={`Remove ${member.name ?? "member"}`}
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                    ))}
                   </div>
 
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="outline" className="flex-1 bg-transparent">
-                      <MessageCircle className="h-3 w-3 mr-1" />
-                      Chat
-                    </Button>
-                    <Button size="sm" variant="outline">
-                      <Settings className="h-3 w-3" />
-                    </Button>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {group.isMember ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busyId === group._id}
+                        onClick={() => void membership(group, "leave")}
+                      >
+                        <LogOut className="mr-2 h-4 w-4" />
+                        Leave
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        disabled={busyId === group._id || full || group.joinPolicy === "closed"}
+                        onClick={() => void membership(group, "join")}
+                      >
+                        {busyId === group._id ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <UserPlus className="mr-2 h-4 w-4" />
+                        )}
+                        {full ? "Full" : group.joinPolicy === "closed" ? "Closed" : "Join"}
+                      </Button>
+                    )}
+
+                    {canManage && (
+                      <>
+                        <Button size="sm" variant="ghost" onClick={() => openEdit(group)}>
+                          <Pencil className="h-4 w-4" />
+                          <span className="sr-only">Edit</span>
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-red-600"
+                          onClick={() => void remove(group)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          <span className="sr-only">Delete</span>
+                        </Button>
+                      </>
+                    )}
                   </div>
                 </CardContent>
               </Card>
-            ))}
+            )
+          })}
+        </div>
+      </AsyncState>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingId ? "Edit group" : "New group"}</DialogTitle>
+            <DialogDescription>
+              An open group can be joined by anyone in the class. A closed one is managed by whoever
+              created it.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Name</Label>
+              <Input
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="Reading Group A"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>What&apos;s it for? (optional)</Label>
+              <Textarea
+                rows={2}
+                value={form.description}
+                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              />
+            </div>
+
+            {!editingId && (
+              <div className="space-y-2">
+                <Label>Class</Label>
+                <Select
+                  value={form.course || undefined}
+                  onValueChange={(v) => setForm((f) => ({ ...f, course: v }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choose a class" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {courses.map((c) => (
+                      <SelectItem key={c._id} value={c._id}>
+                        {c.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Maximum members</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={form.maxMembers}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, maxMembers: Number(e.target.value) || 0 }))
+                  }
+                />
+                <p className="text-xs text-muted-foreground">0 = no limit</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Who can join</Label>
+                <Select
+                  value={form.joinPolicy}
+                  onValueChange={(v) =>
+                    setForm((f) => ({ ...f, joinPolicy: v as "open" | "closed" }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="open">Anyone in the class</SelectItem>
+                    <SelectItem value="closed">Only people I add</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {formError && <p className="text-sm text-red-600">{formError}</p>}
           </div>
-        </TabsContent>
 
-        <TabsContent value="discover">
-          <Card>
-            <CardHeader>
-              <CardTitle>Discover Groups</CardTitle>
-              <CardDescription>Find and join study groups for your subjects</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="mb-6">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
-                  <Input
-                    placeholder="Search groups..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-10"
-                  />
-                </div>
-              </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={saving}>
+              Cancel
+            </Button>
+            <Button onClick={() => void save()} disabled={saving}>
+              {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {editingId ? "Save changes" : "Create group"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {availableGroups.map((group) => (
-                  <Card key={group.id} className="hover:shadow-md transition-shadow">
-                    <CardHeader>
-                      <div className="flex items-center gap-3">
-                        <Avatar>
-                          <AvatarImage src={group.avatar || "/placeholder.svg"} />
-                          <AvatarFallback>{group.name.charAt(0)}</AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 min-w-0">
-                          <CardTitle className="text-lg truncate">{group.name}</CardTitle>
-                          <CardDescription>{group.subject}</CardDescription>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <p className="text-sm text-gray-600">{group.description}</p>
-
-                      <div className="flex items-center gap-2">
-                        <Users className="h-4 w-4 text-gray-500" />
-                        <span className="text-sm">{group.members} members</span>
-                      </div>
-
-                      <Button className="w-full bg-emerald-600 hover:bg-emerald-700">
-                        <UserPlus className="h-4 w-4 mr-2" />
-                        Join Group
-                      </Button>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        <TabsContent value="activity">
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent Activity</CardTitle>
-              <CardDescription>Latest updates from your study groups</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {recentActivity.map((activity, index) => (
-                  <div key={index} className="flex items-start gap-3 p-3 border rounded-lg">
-                    <Avatar className="h-8 w-8">
-                      <AvatarFallback className="text-xs">
-                        {activity.user
-                          .split(" ")
-                          .map((n) => n[0])
-                          .join("")}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm">
-                        <span className="font-medium">{activity.user}</span> {activity.action} in{" "}
-                        <span className="font-medium">{activity.group}</span>
-                      </div>
-                      <div className="flex items-center gap-1 text-xs text-gray-500 mt-1">
-                        <Clock className="h-3 w-3" />
-                        {activity.time}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+      {confirmDialog}
     </div>
   )
 }

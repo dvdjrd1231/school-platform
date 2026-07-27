@@ -22,6 +22,7 @@ export { Discussion, type IDiscussion, type IDiscussionReply } from "./Discussio
 export { CalendarEvent, EVENT_TYPES, type ICalendarEvent, type EventType } from "./CalendarEvent"
 export { FileAsset, FILE_CONTEXTS, type IFileAsset, type FileContext } from "./FileAsset"
 export { Category, type ICategory } from "./Category"
+export { Group, type IGroup } from "./Group"
 export {
   Quiz,
   QUESTION_TYPES,
@@ -31,6 +32,15 @@ export {
   type QuestionType,
 } from "./Quiz"
 export { QuizAttempt, type IQuizAttempt, type IQuizAnswer } from "./QuizAttempt"
+export {
+  Survey,
+  SurveyResponse,
+  SURVEY_QUESTION_TYPES,
+  type ISurvey,
+  type ISurveyQuestion,
+  type ISurveyResponse,
+  type SurveyQuestionType,
+} from "./Survey"
 export { Skill, type ISkill } from "./Skill"
 export {
   SkillAssessment,
