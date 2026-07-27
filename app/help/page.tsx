@@ -1,6 +1,9 @@
 "use client"
 
 import { useState } from "react"
+
+import { useApi } from "@/hooks/use-api"
+import { apiMutate } from "@/lib/api/client"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -25,6 +28,12 @@ export default function HelpCenter() {
   const [ticketSubject, setTicketSubject] = useState("")
   const [ticketCategory, setTicketCategory] = useState("Technical Issue")
   const [ticketDescription, setTicketDescription] = useState("")
+  const [sendingTicket, setSendingTicket] = useState(false)
+  const [ticketError, setTicketError] = useState("")
+  const [ticketSent, setTicketSent] = useState("")
+
+  // Who a support request actually goes to.
+  const contacts = useApi<{ contacts: { _id: string; roles?: string[] }[] }>("/api/contacts")
 
   const faqItems = [
     {
@@ -77,20 +86,47 @@ export default function HelpCenter() {
     },
   ]
 
-  const handleSubmitTicket = () => {
-    if (!ticketSubject || !ticketDescription) {
-      alert("Please fill in all required fields")
+  /**
+   * Send the ticket as a real message to the school's administrators.
+   *
+   * There's no separate ticketing system, and pretending there was one — the
+   * old version logged to the console and claimed success — meant nobody ever
+   * received these. Messaging admins is the honest route: it's delivered,
+   * they're notified, and the person can see their own message in their inbox.
+   */
+  const handleSubmitTicket = async () => {
+    setTicketError("")
+    setTicketSent("")
+
+    if (!ticketSubject.trim() || !ticketDescription.trim()) {
+      setTicketError("Add a subject and a description")
       return
     }
 
-    console.log("[v0] Submitting ticket:", { ticketSubject, ticketCategory, ticketDescription })
-    // TODO: Integrate with actual ticketing system
-    alert("Support ticket submitted successfully! We'll get back to you within 24 hours.")
+    const admins = (contacts.data?.contacts ?? []).filter((c) => c.roles?.includes("admin"))
+    if (admins.length === 0) {
+      setTicketError("No administrator is available to receive this. Please try again later.")
+      return
+    }
 
-    // Reset form
-    setTicketSubject("")
-    setTicketCategory("Technical Issue")
-    setTicketDescription("")
+    setSendingTicket(true)
+    try {
+      const conversation = await apiMutate<{ _id: string }>("/api/conversations", "POST", {
+        participantIds: admins.map((a) => a._id),
+      })
+      await apiMutate(`/api/conversations/${conversation._id}/messages`, "POST", {
+        body: `[${ticketCategory}] ${ticketSubject.trim()}\n\n${ticketDescription.trim()}`,
+      })
+
+      setTicketSent("Sent. You'll find the conversation in your Messages.")
+      setTicketSubject("")
+      setTicketCategory("Technical Issue")
+      setTicketDescription("")
+    } catch (err) {
+      setTicketError(err instanceof Error ? err.message : "Could not send your request")
+    } finally {
+      setSendingTicket(false)
+    }
   }
 
   return (
@@ -238,9 +274,19 @@ export default function HelpCenter() {
                     onChange={(e) => setTicketDescription(e.target.value)}
                   ></textarea>
                 </div>
-                <Button className="w-full bg-emerald-600 hover:bg-emerald-700" onClick={handleSubmitTicket}>
-                  Submit Ticket
+                {ticketError && <p className="text-sm text-red-600">{ticketError}</p>}
+                {ticketSent && <p className="text-sm text-green-700">{ticketSent}</p>}
+                <Button
+                  className="w-full bg-emerald-600 hover:bg-emerald-700"
+                  disabled={sendingTicket}
+                  onClick={() => void handleSubmitTicket()}
+                >
+                  {sendingTicket ? "Sending…" : "Send to an administrator"}
                 </Button>
+                <p className="text-xs text-muted-foreground">
+                  This is sent as a message to the school&apos;s administrators, and appears in your
+                  Messages.
+                </p>
               </CardContent>
             </Card>
           </div>

@@ -1,188 +1,207 @@
-import { FileText, Download, Send, Clock, CheckCircle } from "lucide-react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
+"use client"
+
+import { useMemo } from "react"
+import { useRouter } from "next/navigation"
+import { Download, FileText, GraduationCap } from "lucide-react"
+
+import { useApi } from "@/hooks/use-api"
+import { useRole } from "@/components/context/role-context"
+import { AsyncState } from "@/components/ui/async-state"
 import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
+interface CoursePerformance {
+  courseId: string
+  courseTitle: string
+  courseCode: string
+  subject: string
+  percent: number | null
+  letter: string | null
+  gradedCount: number
+  pendingCount: number
+  missingCount: number
+}
+
+interface PerformanceReport {
+  overall: { percent: number | null; letter: string | null; gpa: number | null }
+  courses: CoursePerformance[]
+}
+
+interface ReportFile {
+  _id: string
+  title?: string
+  filename: string
+  createdAt: string
+  tags: string[]
+}
+
+/**
+ * Academic records: the student's own transcript-style summary.
+ *
+ * Every course, its grade, and the overall standing, plus any report cards the
+ * school has filed. The CSV export is the same one the performance page
+ * produces, so there is one definition of the transcript rather than two.
+ */
 export default function AcademicRecordsPage() {
+  const router = useRouter()
+  const { userId } = useRole()
+
+  const report = useApi<PerformanceReport>(userId ? `/api/performance/${userId}` : null)
+  const reports = useApi<{ files: ReportFile[] }>(
+    userId ? `/api/files?context=report&studentId=${userId}` : null,
+  )
+
+  const courses = useMemo(() => report.data?.courses ?? [], [report.data])
+  const overall = report.data?.overall
+
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">Academic Records and Requests</h1>
-        <p className="text-gray-600">Access your records and submit official requests</p>
+        <h1 className="mb-2 text-3xl font-bold text-gray-900">Academic records</h1>
+        <p className="text-gray-600">Your courses, grades and official reports</p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Academic Records */}
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <FileText className="h-5 w-5 text-emerald-600" />
-                <span>My Academic Records</span>
-              </CardTitle>
-              <CardDescription>Download and view your official documents</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 border rounded-lg">
-                  <div>
-                    <h4 className="font-medium">Official Transcript</h4>
-                    <p className="text-sm text-gray-600">Complete academic history</p>
-                  </div>
-                  <Button size="sm">
-                    <Download className="h-4 w-4 mr-2" />
-                    Download
-                  </Button>
-                </div>
-
-                <div className="flex items-center justify-between p-4 border rounded-lg">
-                  <div>
-                    <h4 className="font-medium">Degree Audit</h4>
-                    <p className="text-sm text-gray-600">Progress toward graduation</p>
-                  </div>
-                  <Button size="sm">
-                    <Download className="h-4 w-4 mr-2" />
-                    Download
-                  </Button>
-                </div>
-
-                <div className="flex items-center justify-between p-4 border rounded-lg">
-                  <div>
-                    <h4 className="font-medium">Enrollment Verification</h4>
-                    <p className="text-sm text-gray-600">Current enrollment status</p>
-                  </div>
-                  <Button size="sm">
-                    <Download className="h-4 w-4 mr-2" />
-                    Download
-                  </Button>
-                </div>
-
-                <div className="flex items-center justify-between p-4 border rounded-lg">
-                  <div>
-                    <h4 className="font-medium">Grade Reports</h4>
-                    <p className="text-sm text-gray-600">Semester grade summaries</p>
-                  </div>
-                  <Button size="sm">
-                    <Download className="h-4 w-4 mr-2" />
-                    Download
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Request Status */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Request Status</CardTitle>
-              <CardDescription>Track your submitted requests</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-4 bg-green-50 rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <CheckCircle className="h-5 w-5 text-green-600" />
-                    <div>
-                      <h4 className="font-medium text-green-800">Transcript Request</h4>
-                      <p className="text-sm text-green-600">Sent to University of California</p>
-                    </div>
-                  </div>
-                  <Badge variant="secondary">Completed</Badge>
-                </div>
-
-                <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg">
-                  <div className="flex items-center space-x-3">
-                    <Clock className="h-5 w-5 text-blue-600" />
-                    <div>
-                      <h4 className="font-medium text-blue-800">Enrollment Verification</h4>
-                      <p className="text-sm text-blue-600">For scholarship application</p>
-                    </div>
-                  </div>
-                  <Badge variant="outline">Processing</Badge>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* New Request Form */}
-        <div>
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <Send className="h-5 w-5 text-emerald-600" />
-                <span>Submit New Request</span>
-              </CardTitle>
-              <CardDescription>Request official documents or records</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form className="space-y-4">
+      <AsyncState isLoading={report.isLoading} error={report.error} onRetry={report.refetch}>
+        {report.data && (
+          <div className="space-y-8">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <GraduationCap className="h-5 w-5" />
+                  Standing
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-wrap gap-8">
                 <div>
-                  <Label htmlFor="request-type">Request Type</Label>
-                  <select
-                    id="request-type"
-                    className="w-full mt-1 p-2 border border-gray-300 rounded-md focus:ring-emerald-500 focus:border-emerald-500"
+                  <p className="text-sm text-muted-foreground">Overall</p>
+                  <p className="text-3xl font-bold">
+                    {overall?.percent == null ? "—" : `${overall.percent}%`}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Grade</p>
+                  <p className="text-3xl font-bold">{overall?.letter ?? "—"}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">GPA</p>
+                  <p className="text-3xl font-bold">{overall?.gpa ?? "—"}</p>
+                </div>
+                <div className="ml-auto flex items-end">
+                  {userId && (
+                    <Button variant="outline" asChild>
+                      <a href={`/api/performance/${userId}?format=csv`} download>
+                        <Download className="mr-2 h-4 w-4" />
+                        Download transcript (CSV)
+                      </a>
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Courses</CardTitle>
+                <CardDescription>Every course on your record</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {courses.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    You&apos;re not enrolled in any courses yet.
+                  </p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Course</TableHead>
+                        <TableHead>Subject</TableHead>
+                        <TableHead>Marked</TableHead>
+                        <TableHead>Outstanding</TableHead>
+                        <TableHead>Grade</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {courses.map((course) => (
+                        <TableRow
+                          key={course.courseId}
+                          className="cursor-pointer"
+                          onClick={() => router.push(`/courses/${course.courseId}`)}
+                        >
+                          <TableCell>
+                            <div className="font-medium hover:text-emerald-600 hover:underline">
+                              {course.courseTitle}
+                            </div>
+                            <div className="text-xs text-muted-foreground">{course.courseCode}</div>
+                          </TableCell>
+                          <TableCell className="text-sm">{course.subject}</TableCell>
+                          <TableCell className="text-sm">{course.gradedCount}</TableCell>
+                          <TableCell className="text-sm">
+                            {course.pendingCount} pending
+                            {course.missingCount > 0 && (
+                              <span className="block text-xs text-red-600">
+                                {course.missingCount} missing
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {course.percent == null ? (
+                              <Badge variant="secondary">No marks yet</Badge>
+                            ) : (
+                              <span className="flex items-center gap-2">
+                                {course.percent}%<Badge>{course.letter}</Badge>
+                              </span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <FileText className="h-5 w-5" />
+                  Official reports
+                </CardTitle>
+                <CardDescription>Report cards and progress reports from the school</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {(reports.data?.files ?? []).length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    No reports have been filed for you yet.
+                  </p>
+                )}
+                {(reports.data?.files ?? []).map((file) => (
+                  <div
+                    key={file._id}
+                    className="flex items-center justify-between rounded border p-3"
                   >
-                    <option value="">Select request type</option>
-                    <option value="transcript">Official Transcript</option>
-                    <option value="enrollment">Enrollment Verification</option>
-                    <option value="degree">Degree Verification</option>
-                    <option value="grades">Grade Report</option>
-                    <option value="other">Other</option>
-                  </select>
-                </div>
-
-                <div>
-                  <Label htmlFor="recipient">Recipient/Institution</Label>
-                  <Input id="recipient" placeholder="Where should this be sent?" className="mt-1" />
-                </div>
-
-                <div>
-                  <Label htmlFor="address">Mailing Address</Label>
-                  <Textarea id="address" placeholder="Complete mailing address" className="mt-1" rows={3} />
-                </div>
-
-                <div>
-                  <Label htmlFor="purpose">Purpose of Request</Label>
-                  <Input id="purpose" placeholder="e.g., Graduate school application" className="mt-1" />
-                </div>
-
-                <div>
-                  <Label htmlFor="rush">Rush Processing</Label>
-                  <div className="mt-1 flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      id="rush"
-                      className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
-                    />
-                    <label htmlFor="rush" className="text-sm text-gray-600">
-                      Rush processing (+$25 fee)
-                    </label>
+                    <div>
+                      <p className="text-sm font-medium">{file.title ?? file.filename}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {new Date(file.createdAt).toLocaleDateString(undefined, {
+                          dateStyle: "medium",
+                        })}
+                      </p>
+                    </div>
+                    <Button variant="outline" size="sm" asChild>
+                      <a href={`/api/files/${file._id}/download`}>
+                        <Download className="mr-1 h-3.5 w-3.5" />
+                        Download
+                      </a>
+                    </Button>
                   </div>
-                </div>
-
-                <div>
-                  <Label htmlFor="notes">Additional Notes</Label>
-                  <Textarea
-                    id="notes"
-                    placeholder="Any special instructions or requirements"
-                    className="mt-1"
-                    rows={3}
-                  />
-                </div>
-
-                <Button type="submit" className="w-full">
-                  <Send className="h-4 w-4 mr-2" />
-                  Submit Request
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+                ))}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+      </AsyncState>
     </div>
   )
 }
