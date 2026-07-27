@@ -9,7 +9,7 @@ import {
   json,
   requireUser,
 } from "@/lib/api/helpers"
-import { courseScope } from "@/lib/api/scope"
+import { childrenOf, courseScope } from "@/lib/api/scope"
 import { MAX_UPLOAD_BYTES, assertAllowedType, saveFile } from "@/lib/storage/gridfs"
 
 export const runtime = "nodejs"
@@ -47,11 +47,19 @@ export async function GET(req: Request) {
 
     if (!hasRole(me, "admin")) {
       const scope = await courseScope(me)
-      filter.$or = [
+      const visible: Record<string, unknown>[] = [
         { owner: me.id },
         { visibility: "school" },
         { visibility: "course", course: { $in: scope.ids } },
+        // Anything filed about you — report cards — is yours to read.
+        { student: me.id },
       ]
+      // And a guardian reads their children's.
+      if (hasRole(me, "parent")) {
+        const children = await childrenOf(me.id)
+        if (children.length > 0) visible.push({ student: { $in: children } })
+      }
+      filter.$or = visible
     }
 
     const files = await FileAsset.find(filter)

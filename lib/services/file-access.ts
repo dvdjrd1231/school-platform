@@ -1,6 +1,6 @@
 import type { IFileAsset } from "@/lib/models/FileAsset"
 import { hasRole, type SessionUser } from "@/lib/api/helpers"
-import { courseScope } from "@/lib/api/scope"
+import { childrenOf, courseScope } from "@/lib/api/scope"
 
 /**
  * May this person read this file?
@@ -13,9 +13,15 @@ export async function canReadFile(me: SessionUser, file: IFileAsset): Promise<bo
   if (String(file.owner) === me.id) return true
   if (file.visibility === "school") return true
 
-  // A report card is readable by the student it's about and their guardians,
-  // which the course rule below wouldn't cover.
-  if (file.student && String(file.student) === me.id) return true
+  // A report card is readable by the student it's about and by their guardians,
+  // which the course rule below wouldn't cover — a parent isn't in the class.
+  if (file.student) {
+    if (String(file.student) === me.id) return true
+    if (hasRole(me, "parent")) {
+      const children = await childrenOf(me.id)
+      if (children.includes(String(file.student))) return true
+    }
+  }
 
   if (file.visibility === "course" && file.course) {
     const scope = await courseScope(me)

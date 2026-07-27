@@ -65,6 +65,7 @@ const createCourseSchema = z.object({
   instructor: z.string().optional(),
   schedule: z.string().optional(),
   room: z.string().optional(),
+  gradeLevel: z.string().max(50).optional(),
   maxStudents: z.number().int().min(1).max(1000).default(30),
   startDate: z.coerce.date().optional(),
   endDate: z.coerce.date().optional(),

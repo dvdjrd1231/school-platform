@@ -24,6 +24,12 @@ export { FileAsset, FILE_CONTEXTS, type IFileAsset, type FileContext } from "./F
 export { Category, type ICategory } from "./Category"
 export { Group, type IGroup } from "./Group"
 export {
+  Attendance,
+  ATTENDANCE_STATUSES,
+  type IAttendance,
+  type AttendanceStatus,
+} from "./Attendance"
+export {
   Quiz,
   QUESTION_TYPES,
   isAutoGradable,

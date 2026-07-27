@@ -30,7 +30,14 @@ export interface ICourse extends Document {
   subject: string
   instructor: Types.ObjectId
   schedule?: string
+  /** The physical classroom, e.g. "B12". Not the year group — see gradeLevel. */
   room?: string
+  /**
+   * The year group this class is for, e.g. "1st Grade". Drives promotion: when
+   * a student moves up, their old grade's classes close and the new grade's
+   * open. Optional, so a mixed-age or elective class can leave it unset.
+   */
+  gradeLevel?: string
   status: "draft" | "active" | "completed" | "upcoming" | "archived"
   maxStudents: number
   startDate?: Date
@@ -84,6 +91,7 @@ const CourseSchema = new Schema<ICourse>(
     instructor: { type: Schema.Types.ObjectId, ref: "User", required: true },
     schedule: String,
     room: String,
+    gradeLevel: String,
     status: {
       type: String,
       enum: ["draft", "active", "completed", "upcoming", "archived"],

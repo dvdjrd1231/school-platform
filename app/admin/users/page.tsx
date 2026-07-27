@@ -19,6 +19,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { StatTile } from "@/components/admin/stat-tile"
 import { ChildrenDialog } from "@/components/admin/children-dialog"
+import { PromoteStudentDialog } from "@/components/admin/promote-student-dialog"
+import { useConfirm } from "@/components/ui/confirm-dialog"
 import {
   Users,
   Plus,
@@ -31,6 +33,7 @@ import {
   Shield,
   Trash2,
   Edit,
+  ArrowUpCircle,
   Loader2,
 } from "lucide-react"
 
@@ -91,6 +94,9 @@ export default function UserManagement() {
   const [editingId, setEditingId] = useState<string | null>(null)
   // The parent whose linked students are being edited, or null when closed.
   const [manageChildrenOf, setManageChildrenOf] = useState<ApiUser | null>(null)
+  // The student being moved up a grade, or null when closed.
+  const [promoting, setPromoting] = useState<ApiUser | null>(null)
+  const [confirm, confirmDialog] = useConfirm()
   const [form, setForm] = useState(EMPTY_FORM)
   const [formError, setFormError] = useState("")
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -182,11 +188,19 @@ export default function UserManagement() {
     }
   }
 
-  const handleDeactivate = async (id: string) => {
+  const handleDeactivate = async (user: ApiUser) => {
+    const ok = await confirm({
+      title: `Deactivate ${user.name}?`,
+      description:
+        "They won't be able to sign in. Their work, grades and messages are kept, and you can reactivate them from Edit user.",
+      confirmLabel: "Deactivate",
+    })
+    if (!ok) return
+
     // Optimistic: reflect the change immediately, reload to confirm.
-    setUsers((prev) => prev.map((u) => (u._id === id ? { ...u, status: "inactive" } : u)))
+    setUsers((prev) => prev.map((u) => (u._id === user._id ? { ...u, status: "inactive" } : u)))
     try {
-      const res = await fetch(`/api/users/${id}`, { method: "DELETE" })
+      const res = await fetch(`/api/users/${user._id}`, { method: "DELETE" })
       if (!res.ok) await loadUsers() // revert to server truth on failure
     } catch {
       await loadUsers()
@@ -501,6 +515,12 @@ export default function UserManagement() {
                                 Linked students
                               </DropdownMenuItem>
                             )}
+                            {role === "student" && (
+                              <DropdownMenuItem onClick={() => setPromoting(user)}>
+                                <ArrowUpCircle className="h-4 w-4 mr-2" />
+                                Promote a grade
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuItem asChild>
                               <a href={`mailto:${user.email}`}>
                                 <Mail className="h-4 w-4 mr-2" />
@@ -510,7 +530,7 @@ export default function UserManagement() {
                             {user.status === "active" && (
                               <DropdownMenuItem
                                 className="text-red-600"
-                                onClick={() => void handleDeactivate(user._id)}
+                                onClick={() => void handleDeactivate(user)}
                               >
                                 <Trash2 className="h-4 w-4 mr-2" />
                                 Deactivate User
@@ -535,6 +555,20 @@ export default function UserManagement() {
         onOpenChange={(o) => !o && setManageChildrenOf(null)}
         onChange={loadUsers}
       />
+
+      {promoting && (
+        <PromoteStudentDialog
+          open
+          student={promoting}
+          onOpenChange={(o) => !o && setPromoting(null)}
+          onPromoted={() => {
+            setPromoting(null)
+            void loadUsers()
+          }}
+        />
+      )}
+
+      {confirmDialog}
     </div>
   )
 }

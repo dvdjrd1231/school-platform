@@ -38,6 +38,7 @@ interface Course {
   description?: string
   schedule?: string
   room?: string
+  gradeLevel?: string
   maxStudents?: number
   enrolledCount?: number
   instructor?: { _id: string; name?: string } | null
@@ -55,6 +56,7 @@ const EMPTY = {
   instructor: "",
   schedule: "",
   room: "",
+  gradeLevel: "",
   maxStudents: "30",
   description: "",
   status: "active" as "draft" | "active" | "upcoming",
@@ -132,6 +134,7 @@ export default function ClassManagement() {
       instructor: c.instructor?._id ?? "",
       schedule: c.schedule ?? "",
       room: c.room ?? "",
+      gradeLevel: c.gradeLevel ?? "",
       maxStudents: String(c.maxStudents ?? 30),
       description: "",
       status: (["draft", "active", "upcoming"].includes(c.status) ? c.status : "active") as
@@ -160,6 +163,7 @@ export default function ClassManagement() {
           instructor: form.instructor || undefined,
           schedule: form.schedule.trim() || undefined,
           room: form.room.trim() || undefined,
+          gradeLevel: form.gradeLevel.trim() || undefined,
           maxStudents: Number(form.maxStudents) || 30,
           description: form.description.trim() || undefined,
           status: form.status,
@@ -172,6 +176,7 @@ export default function ClassManagement() {
           instructor: form.instructor || undefined,
           schedule: form.schedule.trim() || undefined,
           room: form.room.trim() || undefined,
+          gradeLevel: form.gradeLevel.trim() || undefined,
           maxStudents: Number(form.maxStudents) || 30,
           description: form.description.trim() || undefined,
           status: form.status,
@@ -273,6 +278,20 @@ export default function ClassManagement() {
               <div className="space-y-2">
                 <Label>Room</Label>
                 <Input placeholder="A101" value={form.room} onChange={(e) => set("room", e.target.value)} />
+                <p className="text-xs text-muted-foreground">
+                  The physical classroom. The year group goes in Grade level.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>Grade level</Label>
+                <Input
+                  placeholder="1st Grade"
+                  value={form.gradeLevel}
+                  onChange={(e) => set("gradeLevel", e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Used when promoting students between years. Leave blank for a mixed-age class.
+                </p>
               </div>
               <div className="space-y-2">
                 <Label>Capacity</Label>
