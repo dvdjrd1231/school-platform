@@ -1,6 +1,21 @@
-# Production stack: Next.js app + MongoDB + Caddy (automatic HTTPS).
+# Production stack: Next.js app + MongoDB, with optional Caddy for HTTPS.
 #
-#   docker compose up -d --build
+# Two ways to run it, because only one process on a machine can hold ports
+# 80 and 443:
+#
+#   1. This is the only site on the server — Caddy comes with the stack and
+#      obtains certificates itself:
+#
+#        docker compose --profile standalone up -d --build
+#
+#   2. The server already runs a reverse proxy (another site, another stack) —
+#      leave Caddy out and let the existing proxy route to this app by hostname:
+#
+#        docker network create web-proxy        # once, if it doesn't exist
+#        docker compose up -d --build
+#
+#      The app is reachable from that proxy as `school-app:3000`. See
+#      docs/DEPLOYMENT.md for the proxy side.
 #
 # Values come from .env in this directory (see .env.example). That file is
 # gitignored and must never be committed.
@@ -65,12 +80,24 @@ services:
       PUSHER_KEY: ${PUSHER_KEY:-}
       PUSHER_SECRET: ${PUSHER_SECRET:-}
       PUSHER_CLUSTER: ${PUSHER_CLUSTER:-}
-    # Not published to the host either; Caddy is the only way in.
-    networks: [internal, web]
+    # No published ports: the app is never exposed to the host directly. A
+    # reverse proxy reaches it over the shared network below, under the stable
+    # alias `school-app` — the generated container name changes with the
+    # directory the stack is deployed from, so a proxy config that named it
+    # would break on a rename.
+    networks:
+      internal:
+      web-proxy:
+        aliases: [school-app]
 
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    # Only started by `--profile standalone`. When another proxy on the machine
+    # already owns 80/443, starting a second one fails with "port is already
+    # allocated" — which is a configuration choice, not something to discover
+    # from a failed deploy.
+    profiles: [standalone]
     ports:
       - "80:80"
       - "443:443"
@@ -81,7 +108,7 @@ services:
       - caddy-data:/data     # certificates — losing this re-requests them
       - caddy-config:/config
     depends_on: [app]
-    networks: [web]
+    networks: [web-proxy]
 
 volumes:
   mongo-data:
@@ -89,5 +116,12 @@ volumes:
   caddy-config:
 
 networks:
+  # App ↔ database only. Never touches anything outside this stack.
   internal:
-  web:
+
+  # Shared with whichever proxy fronts the machine. Declared external so the
+  # same network can be joined by another compose project; create it once with
+  #   docker network create web-proxy
+  web-proxy:
+    external: true
+    name: ${PROXY_NETWORK:-web-proxy}

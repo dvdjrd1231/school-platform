@@ -198,8 +198,13 @@ chmod 600 .env
 
 ## 7. Start the stack
 
+Only one process on a machine can hold ports 80 and 443, so which command you
+run depends on whether this is the only site on the server.
+
+### 7a. This is the only site (Caddy comes with the stack)
+
 ```bash
-docker compose up -d --build
+docker compose --profile standalone up -d --build
 ```
 
 The first build takes several minutes. Watch it come up:
@@ -208,6 +213,61 @@ The first build takes several minutes. Watch it come up:
 docker compose ps
 docker compose logs -f caddy     # certificate issuing appears here
 ```
+
+### 7b. The server already runs a reverse proxy
+
+If another site is already serving 80/443 — check with
+`docker ps --format '{{.Names}}\t{{.Ports}}' | grep 443` — do **not** start a
+second Caddy. It will fail with *"Bind for 0.0.0.0:443 failed: port is already
+allocated"*. Instead, let the existing proxy route to this app by hostname.
+
+Create the shared network once, then start the stack without the Caddy profile:
+
+```bash
+docker network create web-proxy          # skip if it already exists
+
+cd /opt/school_platform
+docker compose up -d --build
+```
+
+Put the existing proxy on the same network, so it can resolve this app:
+
+```bash
+docker network connect web-proxy <existing-proxy-container>
+```
+
+Then add a site block to that proxy's own Caddyfile:
+
+```caddy
+school.example.com {
+	encode zstd gzip
+	reverse_proxy school-app:3000
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}
+```
+
+`school-app` is a network alias set in `docker-compose.yml`, not the container
+name — the generated container name changes with the directory the stack is
+deployed from, so a proxy config naming it would break on a rename.
+
+Reload the proxy and check:
+
+```bash
+docker exec <existing-proxy-container> caddy reload --config /etc/caddy/Caddyfile
+curl -I https://school.example.com
+```
+
+> Set `APP_URL` in `.env` to the public URL (`https://school.example.com`).
+> Sign-in callbacks are built from it, so a wrong value logs people out.
+>
+> To keep the two stacks on a differently-named network, set `PROXY_NETWORK` in
+> `.env` instead of creating `web-proxy`.
 
 Caddy requests a Let's Encrypt certificate automatically. If it fails, the DNS
 record is almost always the cause — see Troubleshooting.
@@ -311,8 +371,13 @@ On a development machine: `pnpm repair-orphans`, then `pnpm repair-orphans --fix
 ```bash
 cd ~/school-platform
 git pull
-docker compose up -d --build
+docker compose up -d --build                        # behind an existing proxy
+docker compose --profile standalone up -d --build   # if Caddy came with the stack
 ```
+
+Use the same form you started with — without `--profile standalone`, Compose
+leaves the Caddy container alone rather than stopping it, so mixing the two just
+means the proxy doesn't get rebuilt.
 
 Zero-config rebuild; the database volume is untouched. **Changing any
 `NEXT_PUBLIC_*` value requires this rebuild** — those are inlined into the
