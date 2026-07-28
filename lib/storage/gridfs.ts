@@ -13,41 +13,19 @@ import mongoose from "mongoose"
 
 import { connectDB } from "@/lib/db/connect"
 import { ApiError } from "@/lib/api/helpers"
+import { checkUploadType } from "@/lib/storage/upload-policy"
 
 const BUCKET = "uploads"
 
-/** Refuse anything larger than this; the whole body is buffered in memory. */
-export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+// The allowlist itself lives in upload-policy.ts, free of any HTTP or auth
+// import so it can be unit-tested on its own. This module only turns its
+// verdict into the right HTTP error.
+export { MAX_UPLOAD_BYTES, formatBytes } from "@/lib/storage/upload-policy"
 
-/**
- * Types we accept. Deliberately a whitelist, not a blacklist: an upload area is
- * exactly where an .html or .svg with script in it would end up being served
- * back to another signed-in user.
- */
-const ALLOWED_PREFIXES = ["image/", "video/", "audio/"]
-const ALLOWED_EXACT = new Set([
-  "application/pdf",
-  "text/plain",
-  "text/csv",
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.ms-excel",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/vnd.ms-powerpoint",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  "application/zip",
-])
-
-// SVG is an image but can carry script, so it's excluded from the image prefix.
-const BLOCKED_EXACT = new Set(["image/svg+xml"])
-
-export function assertAllowedType(contentType: string): void {
-  const type = contentType.split(";")[0].trim().toLowerCase()
-  if (BLOCKED_EXACT.has(type)) {
-    throw new ApiError(415, "SVG files aren't accepted. Please upload a PNG or JPEG instead.")
-  }
-  const ok = ALLOWED_EXACT.has(type) || ALLOWED_PREFIXES.some((p) => type.startsWith(p))
-  if (!ok) throw new ApiError(415, `Files of type ${type || "unknown"} aren't accepted`)
+/** Throw the appropriate ApiError when a file isn't acceptable. */
+export function assertAllowedType(contentType: string, filename = ""): void {
+  const verdict = checkUploadType(contentType, filename)
+  if (!verdict.ok) throw new ApiError(verdict.status, verdict.message)
 }
 
 async function bucket(): Promise<mongoose.mongo.GridFSBucket> {
@@ -98,15 +76,3 @@ export async function deleteFile(id: mongoose.Types.ObjectId): Promise<void> {
   }
 }
 
-/** Human-readable size, used in the file lists. */
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  const units = ["KB", "MB", "GB"]
-  let value = bytes / 1024
-  let unit = 0
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024
-    unit++
-  }
-  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit]}`
-}

@@ -87,8 +87,10 @@ export async function DELETE(_req: Request, { params }: Params) {
     if (!canWriteFile(me, file)) throw new ApiError(403, "You can only delete your own files")
 
     // Bytes first: a leftover record with no bytes is a broken row a user can
-    // retry, whereas orphaned bytes are invisible and never cleaned up.
-    await deleteFile(file.gridFsId)
+    // retry, whereas orphaned bytes are invisible and never cleaned up. A
+    // YouTube item has no bytes of ours to remove — deleting it unlists the
+    // video here and leaves it untouched on YouTube, which is the intent.
+    if (file.gridFsId) await deleteFile(file.gridFsId)
     await file.deleteOne()
 
     return json({ id, deleted: true })

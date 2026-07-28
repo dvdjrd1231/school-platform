@@ -18,7 +18,7 @@ import {
   isRuleAllowed,
   type LessonType,
 } from "@/lib/lessons/types"
-import { isYoutubeUrl } from "@/lib/lessons/youtube"
+import { isYoutubeUrl } from "@/lib/media/youtube"
 
 const objectId = z.string().regex(/^[a-f\d]{24}$/i, "Not a valid id")
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { isYoutubeUrl, youtubeEmbedUrl, youtubeVideoId } from "@/lib/lessons/youtube"
+import { isYoutubeUrl, youtubeEmbedUrl, youtubeVideoId } from "@/lib/media/youtube"
 
 const ID = "dQw4w9WgXcQ"
 

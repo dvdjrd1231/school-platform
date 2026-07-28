@@ -12,9 +12,11 @@ import {
   Lock,
   Music,
   Pencil,
+  Play,
   Search,
   Trash2,
   Upload,
+  Youtube,
 } from "lucide-react"
 
 import { useApi } from "@/hooks/use-api"
@@ -41,6 +43,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { CategoryPicker } from "@/components/files/category-picker"
 import { DocumentViewer, isViewableDocument } from "@/components/files/document-viewer"
+import { VideoPlayer } from "@/components/courses/video-player"
+import { youtubeThumbnail, youtubeVideoId } from "@/lib/media/youtube"
 
 export type FileContext =
   | "media"
@@ -53,6 +57,9 @@ export type FileContext =
 
 export interface StoredFile {
   _id: string
+  /** "file" is bytes we store; "youtube" is a link streamed from YouTube. */
+  kind?: "file" | "youtube"
+  youtubeId?: string
   filename: string
   contentType: string
   size: number
@@ -80,18 +87,31 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit]}`
 }
 
-function kindOf(contentType: string): "image" | "video" | "audio" | "pdf" | "other" {
-  if (contentType.startsWith("image/")) return "image"
-  if (contentType.startsWith("video/")) return "video"
-  if (contentType.startsWith("audio/")) return "audio"
-  if (contentType === "application/pdf") return "pdf"
+/**
+ * Is this a video the user is trying to upload?
+ *
+ * Extension as well as MIME type: browsers report video types inconsistently,
+ * and a .mov often arrives as application/octet-stream.
+ */
+const VIDEO_EXTENSIONS =
+  /\.(mp4|m4v|mov|webm|avi|mkv|wmv|flv|mpg|mpeg|3gp|ogv)$/i
+
+function isVideoFile(file: File): boolean {
+  return file.type.startsWith("video/") || VIDEO_EXTENSIONS.test(file.name)
+}
+
+function kindOf(file: Pick<StoredFile, "kind" | "contentType">): "youtube" | "image" | "audio" | "pdf" | "other" {
+  if (file.kind === "youtube") return "youtube"
+  if (file.contentType.startsWith("image/")) return "image"
+  if (file.contentType.startsWith("audio/")) return "audio"
+  if (file.contentType === "application/pdf") return "pdf"
   return "other"
 }
 
-function FileIcon({ contentType }: { contentType: string }) {
-  const kind = kindOf(contentType)
+function FileIcon({ file }: { file: Pick<StoredFile, "kind" | "contentType"> }) {
+  const kind = kindOf(file)
+  if (kind === "youtube") return <Youtube className="h-5 w-5" />
   if (kind === "image") return <ImageIcon className="h-5 w-5" />
-  if (kind === "video") return <Film className="h-5 w-5" />
   if (kind === "audio") return <Music className="h-5 w-5" />
   return <FileText className="h-5 w-5" />
 }
@@ -182,11 +202,80 @@ export function FileLibrary({
   })
   const [confirm, confirmDialog] = useConfirm()
 
+  // "Add video" dialog. Videos are never uploaded — they are YouTube links, so
+  // the hosting, transcoding and bandwidth are YouTube's rather than this
+  // server's.
+  // Names of video files someone tried to upload, so the prompt can point them
+  // at the YouTube route instead of just refusing.
+  const [rejectedVideos, setRejectedVideos] = useState<string[]>([])
+  const [linkOpen, setLinkOpen] = useState(false)
+  const [savingLink, setSavingLink] = useState(false)
+  const [linkError, setLinkError] = useState("")
+  const [link, setLink] = useState({
+    url: "",
+    title: "",
+    description: "",
+    categoryPath: [] as string[],
+    tags: "",
+    visibility: defaultVisibility,
+    courseId: courseId ?? "",
+  })
+
+  const linkVideoId = youtubeVideoId(link.url)
+  const linkInvalid = link.url.trim().length > 0 && !linkVideoId
+
+  const addLink = async () => {
+    if (!linkVideoId) {
+      setLinkError("Paste a YouTube link — the address from the video's page or its Share button.")
+      return
+    }
+
+    setSavingLink(true)
+    setLinkError("")
+    try {
+      await apiMutate("/api/files", "POST", {
+        context,
+        url: link.url.trim(),
+        courseId: link.courseId || undefined,
+        title: link.title.trim() || undefined,
+        description: link.description.trim() || undefined,
+        categoryPath: link.categoryPath,
+        tags: link.tags
+          .split(",")
+          .map((t) => t.trim())
+          .filter(Boolean),
+        visibility: link.visibility,
+      })
+
+      setLinkOpen(false)
+      setLink((l) => ({ ...l, url: "", title: "", description: "", tags: "" }))
+      await refetch()
+    } catch (err) {
+      setLinkError(err instanceof Error ? err.message : "Could not add the video")
+    } finally {
+      setSavingLink(false)
+    }
+  }
+
   const chooseFiles = () => inputRef.current?.click()
 
   const onFilesChosen = (list: FileList | null) => {
     if (!list || list.length === 0) return
-    setPending(Array.from(list))
+    const chosen = Array.from(list)
+
+    // Videos go to YouTube, not here. Caught before the upload starts so nobody
+    // waits for a 400 MB file to transfer only to be told no — the server
+    // refuses it too, since this check is only a courtesy.
+    const videos = chosen.filter(isVideoFile)
+    if (videos.length > 0) {
+      setUploadError("")
+      setPending([])
+      if (inputRef.current) inputRef.current.value = ""
+      setRejectedVideos(videos.map((f) => f.name))
+      return
+    }
+
+    setPending(chosen)
     setMeta((m) => ({
       ...m,
       title: list.length === 1 ? list[0].name.replace(/\.[^.]+$/, "") : "",
@@ -297,13 +386,23 @@ export function FileLibrary({
               ref={inputRef}
               type="file"
               multiple
+              // A hint to the file picker, not a restriction — a determined
+              // selection still reaches onFilesChosen, and the server checks
+              // again regardless.
+              accept="image/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"
               className="hidden"
               onChange={(e) => onFilesChosen(e.target.files)}
             />
-            <Button onClick={chooseFiles}>
-              <Upload className="mr-2 h-4 w-4" />
-              Upload files
-            </Button>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setLinkOpen(true)}>
+                <Youtube className="mr-2 h-4 w-4" />
+                Add video
+              </Button>
+              <Button onClick={chooseFiles}>
+                <Upload className="mr-2 h-4 w-4" />
+                Upload files
+              </Button>
+            </div>
           </div>
         )}
       </div>
@@ -336,7 +435,7 @@ export function FileLibrary({
           search || categoryFilter.length > 0
             ? "Nothing matches that filter."
             : canUpload
-              ? "Nothing here yet — upload your first file."
+              ? "Nothing here yet — upload a file, or add a video from YouTube."
               : "Nothing has been shared here yet."
         }
         onRetry={refetch}
@@ -344,7 +443,24 @@ export function FileLibrary({
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {files.map((file) => (
             <Card key={file._id} className="overflow-hidden">
-              {kindOf(file.contentType) === "image" ? (
+              {kindOf(file) === "youtube" && file.youtubeId ? (
+                <button
+                  type="button"
+                  className="group relative flex h-40 w-full items-center justify-center bg-black"
+                  onClick={() => setPreviewing(file)}
+                  aria-label={`Play ${file.title ?? file.filename}`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={youtubeThumbnail(file.youtubeId)}
+                    alt=""
+                    className="absolute inset-0 h-full w-full object-cover opacity-80 transition-opacity group-hover:opacity-60"
+                  />
+                  <span className="relative flex h-12 w-12 items-center justify-center rounded-full bg-emerald-600 shadow-lg transition-transform group-hover:scale-110">
+                    <Play className="ml-0.5 h-6 w-6 text-white" fill="currentColor" />
+                  </span>
+                </button>
+              ) : kindOf(file) === "image" ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={`/api/files/${file._id}/download?inline=1`}
@@ -358,7 +474,7 @@ export function FileLibrary({
                   className="flex h-40 w-full items-center justify-center bg-muted"
                   onClick={() => setPreviewing(file)}
                 >
-                  <FileIcon contentType={file.contentType} />
+                  <FileIcon file={file} />
                 </button>
               )}
 
@@ -369,7 +485,8 @@ export function FileLibrary({
                       {file.title ?? file.filename}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {formatBytes(file.size)} · {file.owner?.name ?? "Unknown"}
+                      {kindOf(file) === "youtube" ? "YouTube" : formatBytes(file.size)} ·{" "}
+                      {file.owner?.name ?? "Unknown"}
                     </p>
                   </div>
                   <Badge variant="outline" className="shrink-0 text-xs">
@@ -389,7 +506,12 @@ export function FileLibrary({
 
                 <div className="flex flex-wrap items-center gap-1 pt-1">
                   <Button variant="outline" size="sm" onClick={() => setPreviewing(file)}>
-                    {isViewableDocument(file.contentType) ? (
+                    {kindOf(file) === "youtube" ? (
+                      <>
+                        <Play className="mr-1 h-3.5 w-3.5" />
+                        Watch
+                      </>
+                    ) : isViewableDocument(file.contentType) ? (
                       <>
                         <BookOpen className="mr-1 h-3.5 w-3.5" />
                         Read
@@ -401,7 +523,7 @@ export function FileLibrary({
                       </>
                     )}
                   </Button>
-                  {file.allowDownload !== false ? (
+                  {kindOf(file) === "youtube" ? null : file.allowDownload !== false ? (
                     <Button variant="outline" size="sm" asChild>
                       <a href={`/api/files/${file._id}/download`}>
                         <Download className="mr-1 h-3.5 w-3.5" />
@@ -564,13 +686,19 @@ export function FileLibrary({
           <DialogHeader>
             <DialogTitle>{previewing?.title ?? previewing?.filename}</DialogTitle>
             <DialogDescription>
-              {previewing && `${formatBytes(previewing.size)} · ${previewing.contentType}`}
+              {previewing &&
+                (kindOf(previewing) === "youtube"
+                  ? "Streamed from YouTube"
+                  : `${formatBytes(previewing.size)} · ${previewing.contentType}`)}
             </DialogDescription>
           </DialogHeader>
 
           {previewing && (
             <div className="space-y-4">
-              {kindOf(previewing.contentType) === "image" && (
+              {kindOf(previewing) === "youtube" && previewing.youtubeId && (
+                <VideoPlayer url={previewing.youtubeId} title={previewing.title ?? previewing.filename} />
+              )}
+              {kindOf(previewing) === "image" && (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={`/api/files/${previewing._id}/download?inline=1`}
@@ -578,17 +706,10 @@ export function FileLibrary({
                   className="max-h-[60vh] w-full rounded object-contain"
                 />
               )}
-              {kindOf(previewing.contentType) === "video" && (
-                <video
-                  controls
-                  className="w-full rounded bg-black"
-                  src={`/api/files/${previewing._id}/download?inline=1`}
-                />
-              )}
-              {kindOf(previewing.contentType) === "audio" && (
+              {kindOf(previewing) === "audio" && (
                 <audio controls className="w-full" src={`/api/files/${previewing._id}/download?inline=1`} />
               )}
-              {kindOf(previewing.contentType) === "pdf" && (
+              {kindOf(previewing) === "pdf" && (
                 <DocumentViewer
                   fileId={previewing._id}
                   filename={previewing.filename}
@@ -597,7 +718,7 @@ export function FileLibrary({
                   height="65vh"
                 />
               )}
-              {kindOf(previewing.contentType) === "other" && (
+              {kindOf(previewing) === "other" && (
                 <p className="py-8 text-center text-sm text-muted-foreground">
                   {previewing.allowDownload === false
                     ? "This file type can't be read in the browser, and it is view-only."
@@ -617,7 +738,7 @@ export function FileLibrary({
           <DialogFooter>
             {previewing &&
               previewing.allowDownload !== false &&
-              kindOf(previewing.contentType) !== "pdf" && (
+              kindOf(previewing) !== "pdf" && (
                 <Button asChild>
                   <a href={`/api/files/${previewing._id}/download`}>
                     <Download className="mr-2 h-4 w-4" />
@@ -705,6 +826,179 @@ export function FileLibrary({
               Cancel
             </Button>
             <Button onClick={() => void saveEdit()}>Save changes</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Someone picked a video file for upload */}
+      <Dialog
+        open={rejectedVideos.length > 0}
+        onOpenChange={(open) => !open && setRejectedVideos([])}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Videos are added from YouTube</DialogTitle>
+            <DialogDescription>
+              This site doesn&apos;t host video files. Upload the video to YouTube, then paste its
+              link here — YouTube handles the storage, the streaming and the bandwidth, and it
+              plays properly on slow connections and phones.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="rounded-md border bg-muted/40 p-3">
+            <p className="mb-1 text-xs font-medium text-muted-foreground">Not added:</p>
+            <ul className="space-y-1 text-sm">
+              {rejectedVideos.map((name) => (
+                <li key={name} className="truncate">
+                  {name}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectedVideos([])}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                setRejectedVideos([])
+                setLinkOpen(true)
+              }}
+            >
+              <Youtube className="mr-2 h-4 w-4" />
+              Add a YouTube link
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add a YouTube video */}
+      <Dialog open={linkOpen} onOpenChange={(open) => !savingLink && setLinkOpen(open)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Add a video</DialogTitle>
+            <DialogDescription>
+              Videos are streamed from YouTube rather than uploaded here, so YouTube handles the
+              hosting and the bandwidth. Upload the video to YouTube first, then paste its link.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="yt-url">YouTube link</Label>
+              <Input
+                id="yt-url"
+                value={link.url}
+                onChange={(e) => setLink((l) => ({ ...l, url: e.target.value }))}
+                placeholder="https://www.youtube.com/watch?v=..."
+                aria-invalid={linkInvalid}
+              />
+              {linkInvalid && (
+                <p className="text-xs text-red-600">
+                  That isn&apos;t a YouTube link. Watch, share, embed and Shorts links all work.
+                </p>
+              )}
+            </div>
+
+            {linkVideoId && (
+              <div className="space-y-2">
+                <Label>Preview</Label>
+                <VideoPlayer url={linkVideoId} title="Video preview" />
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="yt-title">Title</Label>
+              <Input
+                id="yt-title"
+                value={link.title}
+                onChange={(e) => setLink((l) => ({ ...l, title: e.target.value }))}
+                placeholder="What this video is"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="yt-description">Description</Label>
+              <Textarea
+                id="yt-description"
+                rows={2}
+                value={link.description}
+                onChange={(e) => setLink((l) => ({ ...l, description: e.target.value }))}
+              />
+            </div>
+
+            <CategoryPicker
+              value={link.categoryPath}
+              onChange={(categoryPath) => setLink((l) => ({ ...l, categoryPath }))}
+            />
+
+            <div className="space-y-2">
+              <Label htmlFor="yt-tags">Tags</Label>
+              <Input
+                id="yt-tags"
+                value={link.tags}
+                onChange={(e) => setLink((l) => ({ ...l, tags: e.target.value }))}
+                placeholder="Comma separated"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              {!courseId && (
+                <div className="space-y-2">
+                  <Label>Class</Label>
+                  <Select
+                    value={link.courseId || "none"}
+                    onValueChange={(v) =>
+                      setLink((l) => ({ ...l, courseId: v === "none" ? "" : v }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Not class-specific</SelectItem>
+                      {courses.map((c) => (
+                        <SelectItem key={c._id} value={c._id}>
+                          {c.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label>Who can see it</Label>
+                <Select
+                  value={link.visibility}
+                  onValueChange={(v) =>
+                    setLink((l) => ({ ...l, visibility: v as StoredFile["visibility"] }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="private">Only me</SelectItem>
+                    <SelectItem value="course">My class</SelectItem>
+                    {isStaff && <SelectItem value="school">Whole school</SelectItem>}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {linkError && <p className="text-sm text-red-600">{linkError}</p>}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLinkOpen(false)} disabled={savingLink}>
+              Cancel
+            </Button>
+            <Button onClick={() => void addLink()} disabled={savingLink || !linkVideoId}>
+              {savingLink && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              Add video
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

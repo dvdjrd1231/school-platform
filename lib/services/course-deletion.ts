@@ -79,6 +79,8 @@ export async function purgeCourseData(courseId: string): Promise<CourseCleanupCo
   // Stored bytes go before the metadata: an orphaned record is a visible, fixable
   // row, whereas orphaned bytes sit in GridFS invisibly forever.
   for (const file of files) {
+    // YouTube items have no blob of ours; only stored files do.
+    if (!file.gridFsId) continue
     await deleteFile(file.gridFsId).catch(() => {
       // A missing blob is the desired end state; don't abort the whole purge.
     })

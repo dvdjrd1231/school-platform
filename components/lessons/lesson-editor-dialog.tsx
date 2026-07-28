@@ -12,7 +12,7 @@ import {
   type LessonType,
 } from "@/lib/lessons/types"
 import type { NormalisedLesson } from "@/lib/lessons/normalise"
-import { isYoutubeUrl } from "@/lib/lessons/youtube"
+import { isYoutubeUrl } from "@/lib/media/youtube"
 import { cn } from "@/lib/utils"
 
 import { Button } from "@/components/ui/button"

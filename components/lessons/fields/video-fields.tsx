@@ -2,7 +2,7 @@
 
 import { AlertCircle, CheckCircle2 } from "lucide-react"
 
-import { youtubeVideoId } from "@/lib/lessons/youtube"
+import { youtubeVideoId } from "@/lib/media/youtube"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"

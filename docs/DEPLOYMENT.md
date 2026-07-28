@@ -388,6 +388,26 @@ docker compose exec -T -e FIX=true mongo mongosh \
 
 On a development machine: `pnpm repair-orphans`, then `pnpm repair-orphans --fix`.
 
+### Video files uploaded before videos moved to YouTube
+
+Videos are no longer uploaded to the site — they're added as YouTube links, so
+the hosting and bandwidth are YouTube's. New uploads of video are refused, but
+anything stored earlier is still in the database volume, and a few lesson
+videos is easily several gigabytes.
+
+```bash
+cd ~/school-platform
+set -a; . ./.env; set +a
+
+docker compose exec -T mongo mongosh \
+  -u "$MONGO_ROOT_USER" -p "$MONGO_ROOT_PASSWORD" --authenticationDatabase admin \
+  school-platform --quiet --file /scripts/remove-uploaded-videos.mongo.js
+```
+
+That reports the files and their total size. Add `-e FIX=true` to delete them —
+**take a backup first**, and make sure you still have the originals, because the
+videos themselves are gone for good afterwards. Nothing on YouTube is affected.
+
 ---
 
 ## 9. Updating after a code change

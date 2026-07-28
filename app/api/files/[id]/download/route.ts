@@ -30,6 +30,13 @@ export async function GET(req: Request, { params }: Params) {
     if (!file) throw new ApiError(404, "File not found")
     if (!(await canReadFile(me, file))) throw new ApiError(403, "You can't view this file")
 
+    // A YouTube item has no bytes here — the video is streamed from YouTube.
+    // Redirecting would be worse than refusing: it would look like the platform
+    // serves the file while silently handing the request to a third party.
+    if (file.kind === "youtube" || !file.gridFsId) {
+      throw new ApiError(409, "This is a YouTube video — watch it on the page rather than downloading")
+    }
+
     const inline = new URL(req.url).searchParams.get("inline") === "1"
 
     // A view-only file can still be read in the browser, but not taken away.

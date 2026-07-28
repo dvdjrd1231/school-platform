@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { ExternalLink, Play } from "lucide-react"
 
-import { youtubeEmbedUrl, youtubeThumbnail, youtubeVideoId, youtubeWatchUrl } from "@/lib/lessons/youtube"
+import { youtubeEmbedUrl, youtubeThumbnail, youtubeVideoId, youtubeWatchUrl } from "@/lib/media/youtube"
 
 interface Props {
   /** A YouTube link in any of its shapes, or a bare video id. */
