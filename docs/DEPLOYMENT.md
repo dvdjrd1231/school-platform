@@ -269,6 +269,30 @@ curl -I https://school.example.com
 > To keep the two stacks on a differently-named network, set `PROXY_NETWORK` in
 > `.env` instead of creating `web-proxy`.
 
+### 7c. No domain name yet — a stopgap
+
+Hostname routing needs a hostname. With only a bare IP there is nothing for a
+shared proxy to route on, so if another site already owns 80/443 this app has to
+take a port of its own:
+
+```bash
+cd /opt/school_platform
+docker compose -f docker-compose.yml -f docker-compose.hostport.yml up -d --build
+```
+
+Set `APP_URL=http://YOUR_IP:8080` in `.env` first, or sign-in callbacks resolve
+to the wrong address and logins bounce. Reach it at `http://YOUR_IP:8080`.
+Change the port with `APP_HOST_PORT` in `.env`.
+
+**This traffic is unencrypted.** Passwords, marks and student records cross the
+network in the clear. It is fine for getting a deployment testable and not fine
+for running a school.
+
+A certificate cannot be issued for a bare IP address by any public authority, so
+this cannot be fixed with configuration — `https://<ip>/` can only ever be a
+self-signed certificate and a browser warning. The fix is a domain name: add an
+`A` record pointing at the server, then use §7a or §7b above.
+
 Caddy requests a Let's Encrypt certificate automatically. If it fails, the DNS
 record is almost always the cause — see Troubleshooting.
 

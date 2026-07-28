@@ -1,0 +1,24 @@
+# Override: publish the app directly on a host port.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.hostport.yml up -d
+#
+# For the case where the server has no domain name yet and another site already
+# owns ports 80/443, so this app cannot be reached through a shared proxy —
+# there is no hostname for the proxy to route on.
+#
+# This is a stopgap, and the traffic is UNENCRYPTED. Passwords, marks and
+# student records cross the network in the clear, and anyone on the path can
+# read them. Use it to get a deployment testable, not to run a school on.
+#
+# The fix is a domain name: an A record pointing at this server costs about £10
+# a year and makes real HTTPS possible. A certificate cannot be issued for a
+# bare IP address by any public authority — so no amount of configuration turns
+# http://<ip>:8080 into something a browser will trust.
+#
+# See §7b of docs/DEPLOYMENT.md for the proper setup once DNS exists.
+
+services:
+  app:
+    ports:
+      # Host 8080 → the Next.js server. Change APP_HOST_PORT in .env to move it.
+      - "${APP_HOST_PORT:-8080}:3000"
