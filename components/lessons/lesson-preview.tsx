@@ -124,22 +124,11 @@ export function LessonPreview({
           {/* ---- Video --------------------------------------------------- */}
           {draft.payload.type === "video" && (
             <div className="space-y-4">
-              {draft.payload.video.source === "upload" ? (
-                draft.payload.video.fileId ? (
-                  <VideoPlayer
-                    url={`/api/files/${draft.payload.video.fileId}/download?inline=1`}
-                    title={draft.title}
-                  />
-                ) : (
-                  <p className="rounded-md border border-dashed py-10 text-center text-sm text-muted-foreground">
-                    No video uploaded yet.
-                  </p>
-                )
-              ) : draft.payload.video.url.trim() ? (
+              {draft.payload.video.url.trim() ? (
                 <VideoPlayer url={draft.payload.video.url.trim()} title={draft.title} />
               ) : (
                 <p className="rounded-md border border-dashed py-10 text-center text-sm text-muted-foreground">
-                  No video link yet.
+                  No YouTube link yet.
                 </p>
               )}
 

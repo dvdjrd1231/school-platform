@@ -39,14 +39,17 @@ describe("normaliseLesson", () => {
     expect(lesson.video?.notes).toBe("Watch for the diagram at 2:00")
   })
 
-  it("infers the video source from the link when it wasn't recorded", () => {
-    expect(
-      normaliseLesson({ type: "video", order: 0, videoUrl: "https://vimeo.com/123" }).video?.source,
-    ).toBe("vimeo")
-    expect(
-      normaliseLesson({ type: "video", order: 0, videoUrl: "https://cdn.example.com/a.mp4" }).video
-        ?.source,
-    ).toBe("mp4")
+  it("keeps the link of a lesson saved when non-YouTube sources were allowed", () => {
+    // The link is preserved rather than dropped, so a teacher can see what it
+    // was and replace it. The player refuses it and offers the link instead.
+    const lesson = normaliseLesson({
+      type: "video",
+      order: 0,
+      videoUrl: "https://vimeo.com/123",
+    })
+
+    expect(lesson.video?.url).toBe("https://vimeo.com/123")
+    expect(lesson.video?.source).toBe("youtube")
   })
 
   it("prefers the typed payload over the legacy field once both exist", () => {

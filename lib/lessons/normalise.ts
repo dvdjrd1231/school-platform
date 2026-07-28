@@ -97,13 +97,10 @@ interface RawLesson {
 const str = (value: unknown): string | undefined =>
   value === undefined || value === null ? undefined : String(value)
 
-/** Guess a video source from the link, for lessons saved before the field existed. */
-export function inferVideoSource(url?: string): "youtube" | "vimeo" | "mp4" {
-  if (!url) return "youtube"
-  if (/youtu\.?be/i.test(url)) return "youtube"
-  if (/vimeo/i.test(url)) return "vimeo"
-  return "mp4"
-}
+// Video lessons take YouTube links only, so there is no source to infer any
+// more. A lesson saved when Vimeo and direct files were allowed keeps its link
+// in the database; the player says plainly that it can't play it and offers the
+// link, rather than rendering an empty box.
 
 export function normaliseLesson(raw: RawLesson): NormalisedLesson {
   const type: LessonType = isLessonType(raw.type) ? raw.type : "reading"
@@ -152,7 +149,7 @@ export function normaliseLesson(raw: RawLesson): NormalisedLesson {
     case "video": {
       const url = str(raw.video?.url) ?? raw.videoUrl
       normalised.video = {
-        source: str(raw.video?.source) ?? inferVideoSource(url),
+        source: "youtube",
         url,
         fileId: str(raw.video?.fileId),
         durationSeconds: raw.video?.durationSeconds as number | undefined,

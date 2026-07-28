@@ -25,7 +25,8 @@ interface CourseContextValue {
   /** The course the classroom views are currently pointed at, or null. */
   selectedId: string | null
   selected: CourseSummary | null
-  select: (id: string) => void
+  /** Pass null to clear the selection, e.g. when the last course is deleted. */
+  select: (id: string | null) => void
   refetch: () => Promise<void>
 }
 
@@ -59,17 +60,37 @@ export function CourseProvider({ children }: { children: ReactNode }) {
     if (stored) setSelectedId(stored)
   }, [])
 
-  // Default to the first course, and recover if the stored one has since gone.
-  useEffect(() => {
-    if (courses.length === 0) return
-    const stillExists = selectedId && courses.some((c) => c._id === selectedId)
-    if (!stillExists) setSelectedId(courses[0]._id)
-  }, [courses, selectedId])
-
-  const select = useCallback((id: string) => {
+  const select = useCallback((id: string | null) => {
     setSelectedId(id)
-    if (typeof window !== "undefined") window.localStorage.setItem(STORAGE_KEY, id)
+    if (typeof window === "undefined") return
+    if (id) window.localStorage.setItem(STORAGE_KEY, id)
+    else window.localStorage.removeItem(STORAGE_KEY)
   }, [])
+
+  /**
+   * Keep the selection pointing at a course that exists.
+   *
+   * Two cases, and the second used to be missed: when other courses remain we
+   * fall back to the first, but when the *last* course is deleted the stored id
+   * has to be cleared too. Leaving it meant every screen kept requesting a
+   * course that no longer existed, on this and every future visit, because the
+   * dead id stayed in localStorage.
+   */
+  useEffect(() => {
+    if (isLoading) return
+    if (!selectedId) return
+
+    const stillExists = courses.some((c) => c._id === selectedId)
+    if (stillExists) return
+
+    select(courses.length > 0 ? courses[0]._id : null)
+  }, [courses, selectedId, isLoading, select])
+
+  // Pick a first course when nothing is chosen yet.
+  useEffect(() => {
+    if (isLoading || selectedId || courses.length === 0) return
+    select(courses[0]._id)
+  }, [courses, selectedId, isLoading, select])
 
   const value = useMemo<CourseContextValue>(
     () => ({

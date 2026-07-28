@@ -161,10 +161,15 @@ export function isRuleAllowed(type: LessonType, rule: CompletionRule): boolean {
 }
 
 /**
- * Video sources a teacher can choose. `upload` stores a file through the normal
- * upload path; the rest are links the player embeds.
+ * Video lessons take YouTube links, and nothing else.
+ *
+ * Kept as a single-entry list rather than removed: the field still exists on
+ * stored lessons, and one source means one player, one preview and one set of
+ * failure modes — rather than four half-tested ones. Video files are not
+ * uploaded to the platform, which also keeps the database out of the business
+ * of storing hundreds of megabytes of media.
  */
-export const VIDEO_SOURCES = ["youtube", "vimeo", "mp4", "upload"] as const
+export const VIDEO_SOURCES = ["youtube"] as const
 export type VideoSource = (typeof VIDEO_SOURCES)[number]
 
 /** How an interactive activity is delivered. */

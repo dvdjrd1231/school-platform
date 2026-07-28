@@ -65,18 +65,41 @@ describe("lessonBodySchema", () => {
 
     expect(result.success).toBe(false)
     if (result.success) return
-    expect(result.error.issues.some((i) => i.message.includes("video link"))).toBe(true)
+    expect(result.error.issues.some((i) => i.message.includes("YouTube link"))).toBe(true)
   })
 
-  it("accepts an uploaded video identified by file rather than link", () => {
-    const result = lessonBodySchema.safeParse({
-      ...shared,
-      type: "video",
-      completion: { rule: "watch-all" },
-      video: { source: "upload", fileId: "507f1f77bcf86cd799439011" },
-    })
+  it("accepts the shapes of YouTube link a teacher might paste", () => {
+    const links = [
+      "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+      "https://youtu.be/dQw4w9WgXcQ",
+      "https://www.youtube.com/embed/dQw4w9WgXcQ",
+      "https://www.youtube.com/shorts/dQw4w9WgXcQ",
+      "youtu.be/dQw4w9WgXcQ",
+    ]
 
-    expect(result.success).toBe(true)
+    for (const url of links) {
+      const result = lessonBodySchema.safeParse({
+        ...shared,
+        type: "video",
+        completion: { rule: "watch-all" },
+        video: { source: "youtube", url },
+      })
+      expect(result.success, `should accept ${url}`).toBe(true)
+    }
+  })
+
+  it("refuses a video that isn't on YouTube", () => {
+    // Previously these were allowed and rendered an empty player, so the
+    // student was the one who found out.
+    for (const url of ["https://vimeo.com/123456", "https://example.com/lesson.mp4"]) {
+      const result = lessonBodySchema.safeParse({
+        ...shared,
+        type: "video",
+        completion: { rule: "watch-all" },
+        video: { source: "youtube", url },
+      })
+      expect(result.success, `should reject ${url}`).toBe(false)
+    }
   })
 
   it("refuses an interactive lesson with no way to reach the activity", () => {

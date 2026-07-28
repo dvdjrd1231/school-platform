@@ -85,6 +85,8 @@ const metaSchema = z.object({
   categoryPath: z.array(z.string()).max(6).default([]),
   tags: z.array(z.string()).max(20).default([]),
   visibility: z.enum(["private", "course", "school"]).default("private"),
+  /** False makes the item readable online but not downloadable. */
+  allowDownload: z.boolean().default(true),
 })
 
 /**
@@ -156,6 +158,7 @@ export async function POST(req: Request) {
       categoryPath: meta.categoryPath,
       tags: meta.tags,
       visibility: meta.visibility,
+      allowDownload: meta.allowDownload,
     })
 
     return json(asset.toObject(), 201)

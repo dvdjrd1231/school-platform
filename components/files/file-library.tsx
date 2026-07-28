@@ -2,12 +2,14 @@
 
 import { useMemo, useRef, useState } from "react"
 import {
+  BookOpen,
   Download,
   Eye,
   FileText,
   Film,
   Image as ImageIcon,
   Loader2,
+  Lock,
   Music,
   Pencil,
   Search,
@@ -36,7 +38,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { Switch } from "@/components/ui/switch"
 import { CategoryPicker } from "@/components/files/category-picker"
+import { DocumentViewer, isViewableDocument } from "@/components/files/document-viewer"
 
 export type FileContext =
   | "media"
@@ -57,6 +61,7 @@ export interface StoredFile {
   categoryPath: string[]
   tags: string[]
   visibility: "private" | "course" | "school"
+  allowDownload: boolean
   downloads: number
   createdAt: string
   owner?: { _id: string; name?: string } | null
@@ -160,6 +165,7 @@ export function FileLibrary({
     categoryPath: [] as string[],
     tags: "",
     visibility: defaultVisibility,
+    allowDownload: true,
     courseId: courseId ?? "",
   })
 
@@ -172,6 +178,7 @@ export function FileLibrary({
     categoryPath: [] as string[],
     tags: "",
     visibility: "private" as StoredFile["visibility"],
+    allowDownload: true,
   })
   const [confirm, confirmDialog] = useConfirm()
 
@@ -214,6 +221,7 @@ export function FileLibrary({
               .map((t) => t.trim())
               .filter(Boolean),
             visibility: meta.visibility,
+            allowDownload: meta.allowDownload,
           }),
         )
 
@@ -243,6 +251,7 @@ export function FileLibrary({
       categoryPath: file.categoryPath,
       tags: file.tags.join(", "),
       visibility: file.visibility,
+      allowDownload: file.allowDownload !== false,
     })
   }
 
@@ -257,6 +266,7 @@ export function FileLibrary({
         .map((t) => t.trim())
         .filter(Boolean),
       visibility: editForm.visibility,
+      allowDownload: editForm.allowDownload,
     })
     setEditing(null)
     await refetch()
@@ -379,15 +389,31 @@ export function FileLibrary({
 
                 <div className="flex flex-wrap items-center gap-1 pt-1">
                   <Button variant="outline" size="sm" onClick={() => setPreviewing(file)}>
-                    <Eye className="mr-1 h-3.5 w-3.5" />
-                    Preview
+                    {isViewableDocument(file.contentType) ? (
+                      <>
+                        <BookOpen className="mr-1 h-3.5 w-3.5" />
+                        Read
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="mr-1 h-3.5 w-3.5" />
+                        Preview
+                      </>
+                    )}
                   </Button>
-                  <Button variant="outline" size="sm" asChild>
-                    <a href={`/api/files/${file._id}/download`}>
-                      <Download className="mr-1 h-3.5 w-3.5" />
-                      Download
-                    </a>
-                  </Button>
+                  {file.allowDownload !== false ? (
+                    <Button variant="outline" size="sm" asChild>
+                      <a href={`/api/files/${file._id}/download`}>
+                        <Download className="mr-1 h-3.5 w-3.5" />
+                        Download
+                      </a>
+                    </Button>
+                  ) : (
+                    <Badge variant="outline" className="flex items-center gap-1 text-xs">
+                      <Lock className="h-3 w-3" />
+                      View only
+                    </Badge>
+                  )}
                   {mine(file) && (
                     <>
                       <Button variant="ghost" size="icon" onClick={() => openEdit(file)}>
@@ -503,6 +529,20 @@ export function FileLibrary({
               </div>
             </div>
 
+            <div className="flex items-center justify-between rounded-md border p-3">
+              <div>
+                <Label>Allow downloading</Label>
+                <p className="text-xs text-muted-foreground">
+                  Turn this off for material that may be read online but not taken away. PDFs
+                  stay readable in the browser either way.
+                </p>
+              </div>
+              <Switch
+                checked={meta.allowDownload}
+                onCheckedChange={(allowDownload) => setMeta((m) => ({ ...m, allowDownload }))}
+              />
+            </div>
+
             {uploadError && <p className="text-sm text-red-600">{uploadError}</p>}
           </div>
 
@@ -549,15 +589,19 @@ export function FileLibrary({
                 <audio controls className="w-full" src={`/api/files/${previewing._id}/download?inline=1`} />
               )}
               {kindOf(previewing.contentType) === "pdf" && (
-                <iframe
-                  title={previewing.filename}
-                  src={`/api/files/${previewing._id}/download?inline=1`}
-                  className="h-[60vh] w-full rounded border"
+                <DocumentViewer
+                  fileId={previewing._id}
+                  filename={previewing.filename}
+                  contentType={previewing.contentType}
+                  allowDownload={previewing.allowDownload !== false}
+                  height="65vh"
                 />
               )}
               {kindOf(previewing.contentType) === "other" && (
                 <p className="py-8 text-center text-sm text-muted-foreground">
-                  This file type can&apos;t be previewed in the browser — download it to open it.
+                  {previewing.allowDownload === false
+                    ? "This file type can't be read in the browser, and it is view-only."
+                    : "This file type can't be previewed in the browser — download it to open it."}
                 </p>
               )}
 
@@ -571,14 +615,16 @@ export function FileLibrary({
           )}
 
           <DialogFooter>
-            {previewing && (
-              <Button asChild>
-                <a href={`/api/files/${previewing._id}/download`}>
-                  <Download className="mr-2 h-4 w-4" />
-                  Download
-                </a>
-              </Button>
-            )}
+            {previewing &&
+              previewing.allowDownload !== false &&
+              kindOf(previewing.contentType) !== "pdf" && (
+                <Button asChild>
+                  <a href={`/api/files/${previewing._id}/download`}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Download
+                  </a>
+                </Button>
+              )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -637,6 +683,20 @@ export function FileLibrary({
                   {isStaff && <SelectItem value="school">Whole school</SelectItem>}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="flex items-center justify-between rounded-md border p-3">
+              <div>
+                <Label>Allow downloading</Label>
+                <p className="text-xs text-muted-foreground">
+                  Turn this off for material that may be read online but not taken away. PDFs
+                  stay readable in the browser either way.
+                </p>
+              </div>
+              <Switch
+                checked={editForm.allowDownload}
+                onCheckedChange={(allowDownload) => setEditForm((f) => ({ ...f, allowDownload }))}
+              />
             </div>
           </div>
 

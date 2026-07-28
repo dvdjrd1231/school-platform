@@ -3,6 +3,7 @@ import { z } from "zod"
 import { Assignment, Course, Enrollment, User } from "@/lib/models"
 import { normaliseLesson } from "@/lib/lessons/normalise"
 import { visibleToStudents } from "@/lib/services/lessons"
+import { purgeCourseData, summariseCourseContents } from "@/lib/services/course-deletion"
 import {
   ApiError,
   assertObjectId,
@@ -220,18 +221,21 @@ export async function DELETE(req: Request, { params }: Params) {
     const hard = new URL(req.url).searchParams.get("hard") === "true"
 
     if (hard) {
-      const [enrolled, lessonCount] = await Promise.all([
-        Enrollment.countDocuments({ course: id, status: { $ne: "dropped" } }),
-        Promise.resolve(course.modules.reduce((n, m) => n + (m.lessons?.length ?? 0), 0)),
-      ])
-      if (enrolled > 0 || lessonCount > 0) {
-        throw new ApiError(
-          409,
-          `Remove all students and lessons first (${enrolled} enrolled, ${lessonCount} lesson(s)).`,
-        )
-      }
+      // A hard delete now removes the class *and* everything that referenced
+      // it. Previously it deleted only the course document, leaving assignments,
+      // submissions, quizzes, enrolments and files behind holding an id that
+      // resolved to nothing — and several of those references are declared
+      // required, so those records were in a state the schema forbids.
+      //
+      // The old guard refused while any student or lesson remained. That read as
+      // safe but wasn't: it blocked the tidy case and did nothing about the ten
+      // other collections, so the only deletes it permitted were the ones that
+      // still orphaned data.
+      const contents = await summariseCourseContents(id)
+      const counts = await purgeCourseData(id)
       await course.deleteOne()
-      return json({ id, deleted: true })
+
+      return json({ id, deleted: true, removed: counts, had: contents })
     }
 
     course.status = "archived"

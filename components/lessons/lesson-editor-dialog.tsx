@@ -12,6 +12,7 @@ import {
   type LessonType,
 } from "@/lib/lessons/types"
 import type { NormalisedLesson } from "@/lib/lessons/normalise"
+import { isYoutubeUrl } from "@/lib/lessons/youtube"
 import { cn } from "@/lib/utils"
 
 import { Button } from "@/components/ui/button"
@@ -307,9 +308,9 @@ export function LessonEditorDialog({
     if (!draft.courseId) return "Choose which class this lesson is for"
 
     if (draft.payload.type === "video") {
-      const video = draft.payload.video
-      if (video.source === "upload" && !video.fileId) return "Upload the video file"
-      if (video.source !== "upload" && !video.url.trim()) return "Add the video link"
+      const url = draft.payload.video.url.trim()
+      if (!url) return "Add the YouTube link"
+      if (!isYoutubeUrl(url)) return "Video lessons take YouTube links only"
     }
 
     if (draft.payload.type === "interactive") {

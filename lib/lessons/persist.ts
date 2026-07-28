@@ -64,10 +64,9 @@ export async function applyLessonBody(
       break
 
     case "video":
-      lesson.video = {
-        ...body.video,
-        fileId: body.video.fileId ? new Types.ObjectId(body.video.fileId) : undefined,
-      }
+      // Videos are YouTube links now; any fileId from an earlier uploaded-video
+      // lesson is dropped rather than carried forward.
+      lesson.video = { ...body.video, fileId: undefined }
       break
 
     case "interactive":

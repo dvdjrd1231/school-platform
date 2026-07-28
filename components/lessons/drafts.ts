@@ -29,9 +29,9 @@ export interface ReadingDraft {
 }
 
 export interface VideoDraft {
-  source: "youtube" | "vimeo" | "mp4" | "upload"
+  /** Always "youtube" — video lessons take YouTube links only. */
+  source: "youtube"
   url: string
-  fileId: string
   durationSeconds: string
   transcript: string
   notes: string
@@ -90,7 +90,6 @@ export function blankPayload(type: LessonType): LessonPayload {
         video: {
           source: "youtube",
           url: "",
-          fileId: "",
           durationSeconds: "",
           transcript: "",
           notes: "",
@@ -172,9 +171,8 @@ export function draftFromLesson(
       base.payload = {
         type: "video",
         video: {
-          source: (lesson.video?.source as VideoDraft["source"]) ?? "youtube",
+          source: "youtube",
           url: lesson.video?.url ?? "",
-          fileId: lesson.video?.fileId ?? "",
           durationSeconds: lesson.video?.durationSeconds
             ? String(lesson.video.durationSeconds)
             : "",
@@ -231,8 +229,8 @@ export function payloadHasContent(payload: LessonPayload): boolean {
       return Boolean(stripped || externalUrl.trim() || teacherNotes.trim())
     }
     case "video": {
-      const { url, fileId, transcript, notes } = payload.video
-      return Boolean(url.trim() || fileId || transcript.trim() || notes.trim())
+      const { url, transcript, notes } = payload.video
+      return Boolean(url.trim() || transcript.trim() || notes.trim())
     }
     case "interactive": {
       const { url, fileId, instructions, builtinActivity, feedback } = payload.interactive
@@ -285,9 +283,8 @@ export function draftToBody(draft: LessonDraft): Record<string, unknown> {
         ...shared,
         type: "video",
         video: {
-          source: video.source,
-          url: video.source === "upload" ? "" : video.url.trim(),
-          fileId: video.source === "upload" ? video.fileId || undefined : undefined,
+          source: "youtube",
+          url: video.url.trim(),
           durationSeconds: video.durationSeconds ? Number(video.durationSeconds) : undefined,
           transcript: video.transcript.trim() || undefined,
           notes: video.notes.trim() || undefined,

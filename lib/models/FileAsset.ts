@@ -43,6 +43,16 @@ export interface IFileAsset extends Document {
    *  - school:  every signed-in user
    */
   visibility: "private" | "course" | "school"
+  /**
+   * When false the file can be read in the browser but not downloaded — the
+   * download endpoint refuses, and the UI offers only the viewer. For library
+   * material the school is licensed to show but not distribute.
+   *
+   * This is a policy control, not DRM: anyone who can see a document can
+   * screenshot or print it. It stops casual redistribution, which is what the
+   * licensing actually turns on.
+   */
+  allowDownload: boolean
   downloads: number
   createdAt: Date
   updatedAt: Date
@@ -63,6 +73,9 @@ const FileAssetSchema = new Schema<IFileAsset>(
     categoryPath: { type: [String], default: [] },
     tags: { type: [String], default: [] },
     visibility: { type: String, enum: ["private", "course", "school"], default: "private" },
+    // Defaults to true so every file uploaded before this existed keeps
+    // behaving as it did.
+    allowDownload: { type: Boolean, default: true },
     downloads: { type: Number, default: 0 },
   },
   { timestamps: true },

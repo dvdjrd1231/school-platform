@@ -1,5 +1,5 @@
 import { FileAsset } from "@/lib/models"
-import { ApiError, assertObjectId, handleErrors, requireUser } from "@/lib/api/helpers"
+import { ApiError, assertObjectId, handleErrors, hasRole, requireUser } from "@/lib/api/helpers"
 import { canReadFile } from "@/lib/services/file-access"
 import { openDownloadStream } from "@/lib/storage/gridfs"
 
@@ -31,6 +31,18 @@ export async function GET(req: Request, { params }: Params) {
     if (!(await canReadFile(me, file))) throw new ApiError(403, "You can't view this file")
 
     const inline = new URL(req.url).searchParams.get("inline") === "1"
+
+    // A view-only file can still be read in the browser, but not taken away.
+    // Enforced here rather than by hiding the button: the download URL is
+    // guessable, so a UI-only rule would be no rule at all. The owner and admins
+    // are exempt — they have to be able to get their own material back.
+    if (!file.allowDownload && !inline) {
+      const isOwner = String(file.owner) === me.id
+      if (!isOwner && !hasRole(me, "admin")) {
+        throw new ApiError(403, "This item is available to read online, but not to download")
+      }
+    }
+
     const stream = await openDownloadStream(file.gridFsId)
 
     // Count real downloads, not previews, and don't make the response wait.

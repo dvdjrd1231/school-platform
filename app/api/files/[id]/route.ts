@@ -44,6 +44,7 @@ const updateSchema = z.object({
   categoryPath: z.array(z.string()).max(6).optional(),
   tags: z.array(z.string()).max(20).optional(),
   visibility: z.enum(["private", "course", "school"]).optional(),
+  allowDownload: z.boolean().optional(),
 })
 
 /** PATCH /api/files/:id — rename, re-file, or change who can see it. */

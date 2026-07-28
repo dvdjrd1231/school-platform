@@ -4,10 +4,12 @@ import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { Search, Plus, MoreHorizontal, Archive, Loader2, Users, GraduationCap, BookOpen, Eye, Pencil, Trash2 } from "lucide-react"
 
+import { useCourses } from "@/components/context/course-context"
 import { useRole } from "@/components/context/role-context"
 import { useApi } from "@/hooks/use-api"
-import { apiMutate } from "@/lib/api/client"
+import { apiGet, apiMutate } from "@/lib/api/client"
 import { AsyncState } from "@/components/ui/async-state"
+import { useConfirm } from "@/components/ui/confirm-dialog"
 import { StatTile } from "@/components/admin/stat-tile"
 import { RosterDialog } from "@/components/admin/roster-dialog"
 import { Button } from "@/components/ui/button"
@@ -65,6 +67,10 @@ const EMPTY = {
 export default function ClassManagement() {
   const { isAdmin, isLoading: rolesLoading } = useRole()
   const router = useRouter()
+  // The shared course list backs every classroom screen, so a delete here has
+  // to invalidate it — otherwise the rest of the app keeps offering the class.
+  const { selectedId, select, refetch: refetchCourses } = useCourses()
+  const [confirm, confirmDialog] = useConfirm()
 
   const [search, setSearch] = useState("")
   const [subjectFilter, setSubjectFilter] = useState("all")
@@ -198,13 +204,56 @@ export default function ClassManagement() {
     await coursesReq.refetch()
   }
 
+  /**
+   * Permanently delete a class and everything belonging to it.
+   *
+   * The confirmation names real numbers first — deleting a class now also
+   * removes its assignments, submissions, quizzes and marks, which is a very
+   * different decision from removing an empty shell, and "are you sure?" is not
+   * enough information to make it. Archiving stays available for the common
+   * case of taking a class out of circulation without losing its records.
+   */
   const remove = async (c: Course) => {
-    if (!window.confirm(`Permanently delete "${c.title}"? This cannot be undone.`)) return
+    let detail = ""
+    try {
+      const { contents } = await apiGet<{ contents: Record<string, number> }>(
+        `/api/courses/${c._id}/contents`,
+      )
+      const parts = [
+        [contents.enrolled, "enrolled student"],
+        [contents.lessons, "lesson"],
+        [contents.assignments, "assignment"],
+        [contents.quizzes, "quiz", "quizzes"],
+        [contents.submissions, "submission"],
+        [contents.files, "file"],
+      ]
+        .filter(([count]) => (count as number) > 0)
+        .map(([count, singular, plural]) =>
+          count === 1 ? `1 ${singular}` : `${count} ${plural ?? `${singular}s`}`,
+        )
+
+      detail = parts.length > 0 ? ` It still has ${parts.join(", ")}, all of which go with it.` : ""
+    } catch {
+      // The summary is a courtesy; a failure to fetch it shouldn't block the
+      // delete, but the warning then has to be the blunt one.
+      detail = " Everything belonging to it will be removed."
+    }
+
+    const ok = await confirm({
+      title: `Permanently delete "${c.title}"?`,
+      description: `This cannot be undone.${detail} To take the class out of circulation while keeping its records, archive it instead.`,
+      confirmLabel: "Delete permanently",
+      requireText: "delete",
+    })
+    if (!ok) return
+
     try {
       await apiMutate(`/api/courses/${c._id}?hard=true`, "DELETE")
+      // A deleted class may be the one currently selected across the app.
+      if (selectedId === c._id) select(null)
       await coursesReq.refetch()
+      await refetchCourses()
     } catch (err) {
-      // The API refuses when the class still has students or lessons.
       window.alert(err instanceof Error ? err.message : "Could not delete the class")
     }
   }
@@ -535,6 +584,8 @@ export default function ClassManagement() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {confirmDialog}
     </div>
   )
 }

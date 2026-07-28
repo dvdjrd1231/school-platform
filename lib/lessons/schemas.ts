@@ -18,6 +18,7 @@ import {
   isRuleAllowed,
   type LessonType,
 } from "@/lib/lessons/types"
+import { isYoutubeUrl } from "@/lib/lessons/youtube"
 
 const objectId = z.string().regex(/^[a-f\d]{24}$/i, "Not a valid id")
 
@@ -67,21 +68,26 @@ const videoSchema = z.object({
   ...sharedFields,
   video: z
     .object({
-      source: z.enum(VIDEO_SOURCES),
-      url: optionalUrl,
-      fileId: objectId.optional(),
+      source: z.enum(VIDEO_SOURCES).default("youtube"),
+      url: z.string().max(2000).optional(),
       durationSeconds: z.number().int().min(0).max(86_400).optional(),
       transcript: z.string().max(200_000).optional(),
       notes: z.string().max(50_000).optional(),
     })
     .superRefine((value, ctx) => {
-      // A video lesson with no video is the one thing this type cannot be.
-      if (value.source === "upload") {
-        if (!value.fileId) {
-          ctx.addIssue({ code: "custom", message: "Upload a video file", path: ["fileId"] })
-        }
-      } else if (!value.url) {
-        ctx.addIssue({ code: "custom", message: "Add the video link", path: ["url"] })
+      // A video lesson with no video is the one thing this type cannot be, and
+      // a link that isn't YouTube would render an empty player rather than an
+      // error — so it's rejected here, not discovered by a student later.
+      if (!value.url?.trim()) {
+        ctx.addIssue({ code: "custom", message: "Add the YouTube link", path: ["url"] })
+        return
+      }
+      if (!isYoutubeUrl(value.url)) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Video lessons take YouTube links only",
+          path: ["url"],
+        })
       }
     }),
 })

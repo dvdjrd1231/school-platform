@@ -274,6 +274,36 @@ accounts' courses, assignments, submissions, messages and notifications.
 On a development machine the same job is `pnpm check-demo-data`, and
 `pnpm check-demo-data --remove` to act on it.
 
+### Records left behind by a deleted class
+
+Deleting a class used to remove only the class itself. Its assignments,
+submissions, quizzes, enrolments, attendance, groups and files were left holding
+a class id that no longer resolved to anything — and a page that reads through
+such a reference without a guard fails, which can look like the whole site being
+down.
+
+Deletion now cleans up after itself, so this only affects classes removed before
+that change. To check:
+
+```bash
+cd ~/school-platform
+set -a; . ./.env; set +a
+
+docker compose exec -T mongo mongosh \
+  -u "$MONGO_ROOT_USER" -p "$MONGO_ROOT_PASSWORD" --authenticationDatabase admin \
+  school-platform --quiet --file /scripts/repair-orphans.mongo.js
+```
+
+That only reports. To clean up — **take a backup first**, see *Backups* below:
+
+```bash
+docker compose exec -T -e FIX=true mongo mongosh \
+  -u "$MONGO_ROOT_USER" -p "$MONGO_ROOT_PASSWORD" --authenticationDatabase admin \
+  school-platform --quiet --file /scripts/repair-orphans.mongo.js
+```
+
+On a development machine: `pnpm repair-orphans`, then `pnpm repair-orphans --fix`.
+
 ---
 
 ## 9. Updating after a code change
