@@ -1,14 +1,16 @@
 import { Types } from "mongoose"
 
 import { Enrollment } from "@/lib/models"
+import { ApiError, assertObjectId, handleErrors, json, requireUser } from "@/lib/api/helpers"
 import {
-  ApiError,
-  assertObjectId,
-  handleErrors,
-  json,
-  requireUser,
-} from "@/lib/api/helpers"
-import { findLesson, isUnlocked, orderedLessons, progressPercent } from "@/lib/services/lessons"
+  findLesson,
+  isUnlocked,
+  orderedLessons,
+  progressPercent,
+  visibleToStudents,
+} from "@/lib/services/lessons"
+import { normaliseLesson } from "@/lib/lessons/normalise"
+import { canCompleteLesson } from "@/lib/services/lesson-completion"
 
 export const runtime = "nodejs"
 
@@ -20,8 +22,9 @@ interface Params {
  * POST /api/lessons/:lessonId/complete
  *
  * Marks the lesson done for the calling student and recomputes their course
- * progress. Refuses lessons that are still locked, so completion can't be used
- * to skip ahead. Returns the next lesson, which the viewer offers as a link.
+ * progress. Two gates before that: the lesson must be unlocked (so completion
+ * can't be used to skip ahead), and the lesson's own completion rule must be
+ * satisfied where that is checkable — see lib/services/lesson-completion.ts.
  */
 export async function POST(_req: Request, { params }: Params) {
   try {
@@ -32,14 +35,24 @@ export async function POST(_req: Request, { params }: Params) {
     const found = await findLesson(lessonId)
     if (!found) throw new ApiError(404, "Lesson not found")
 
+    const normalised = normaliseLesson(found.lesson)
+    if (!visibleToStudents(normalised)) throw new ApiError(404, "Lesson not found")
+
     const enrollment = await Enrollment.findOne({ student: me.id, course: found.course._id })
     if (!enrollment) throw new ApiError(403, "You are not enrolled in this course")
 
-    const flat = orderedLessons(found.course)
+    // Students walk the published sequence, so drafts don't block them.
+    const flat = orderedLessons(found.course, { publishedOnly: true })
+    const index = flat.findIndex((e) => String(e.lesson._id) === lessonId)
     const completed = new Set(enrollment.completedLessons.map(String))
 
-    if (!isUnlocked(flat, found.index, completed)) {
+    if (!isUnlocked(flat, index, completed)) {
       throw new ApiError(409, "Finish the earlier lessons first")
+    }
+
+    const check = await canCompleteLesson(normalised, me.id)
+    if (!check.allowed) {
+      throw new ApiError(409, check.reason ?? "This lesson isn't finished yet")
     }
 
     if (!completed.has(lessonId)) {
@@ -47,8 +60,8 @@ export async function POST(_req: Request, { params }: Params) {
       completed.add(lessonId)
     }
 
-    // Count only lessons that still exist, so a deleted lesson can't leave a
-    // student stuck above 100%.
+    // Count only lessons that still exist and are visible, so a deleted or
+    // unpublished lesson can't leave a student stuck above 100%.
     const liveIds = new Set(flat.map((e) => String(e.lesson._id)))
     const completedCount = [...completed].filter((id) => liveIds.has(id)).length
     enrollment.progress = progressPercent(flat.length, completedCount)
@@ -58,7 +71,7 @@ export async function POST(_req: Request, { params }: Params) {
     }
     await enrollment.save()
 
-    const next = flat[found.index + 1]
+    const next = flat[index + 1]
 
     return json({
       lessonId,
@@ -90,7 +103,7 @@ export async function DELETE(_req: Request, { params }: Params) {
       (id) => String(id) !== lessonId,
     ) as never
 
-    const flat = orderedLessons(found.course)
+    const flat = orderedLessons(found.course, { publishedOnly: true })
     const liveIds = new Set(flat.map((e) => String(e.lesson._id)))
     const completedCount = enrollment.completedLessons.filter((id) => liveIds.has(String(id))).length
     enrollment.progress = progressPercent(flat.length, completedCount)

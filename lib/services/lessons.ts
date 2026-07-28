@@ -16,16 +16,38 @@ export interface LessonLocation {
   index: number
 }
 
-/** Every lesson of a course in the order a student walks through them. */
-export function orderedLessons(course: Pick<ICourse, "modules">): {
-  module: IModule
-  lesson: ILessonItem
-}[] {
+/**
+ * Is this lesson visible to a student right now?
+ *
+ * Two gates: it must be published, and any release date must have passed.
+ * Staff bypass both — a teacher has to be able to see a draft to finish it.
+ */
+export function visibleToStudents(lesson: {
+  status?: string
+  availableFrom?: Date | string | null
+}): boolean {
+  if (lesson.status === "draft") return false
+  if (lesson.availableFrom && new Date(lesson.availableFrom).getTime() > Date.now()) return false
+  return true
+}
+
+/**
+ * Every lesson of a course in the order a student walks through them.
+ *
+ * `publishedOnly` matters for more than display: the sequential-unlock rule
+ * counts positions in this list, so leaving a draft in it would make a student
+ * wait on a lesson they can't see.
+ */
+export function orderedLessons(
+  course: Pick<ICourse, "modules">,
+  { publishedOnly = false } = {},
+): { module: IModule; lesson: ILessonItem }[] {
   return [...course.modules]
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
     .flatMap((module) =>
       [...(module.lessons ?? [])]
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+        .filter((lesson) => !publishedOnly || visibleToStudents(lesson))
         .map((lesson) => ({ module, lesson })),
     )
 }

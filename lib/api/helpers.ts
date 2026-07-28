@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { ZodError, type ZodSchema } from "zod"
+import { ZodError, type TypeOf, type ZodTypeAny } from "zod"
 import mongoose from "mongoose"
 
 import { auth } from "@/lib/auth"
@@ -46,8 +46,18 @@ export function hasRole(user: SessionUser, ...roles: UserRole[]): boolean {
   return roles.some((r) => user.roles.includes(r))
 }
 
-/** Parse and validate a JSON request body. Throws ApiError(400) on mismatch. */
-export async function parseBody<T>(req: Request, schema: ZodSchema<T>): Promise<T> {
+/**
+ * Parse and validate a JSON request body. Throws ApiError(400) on mismatch.
+ *
+ * Returns the schema's *output* type. Inferring from the schema rather than
+ * taking `ZodSchema<T>` matters once schemas use `.default()` or `.transform()`:
+ * with the old signature TypeScript unified input and output, so a field with a
+ * default still looked optional to every caller.
+ */
+export async function parseBody<S extends ZodTypeAny>(
+  req: Request,
+  schema: S,
+): Promise<TypeOf<S>> {
   let raw: unknown
   try {
     raw = await req.json()

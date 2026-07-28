@@ -7,7 +7,8 @@ import {
   json,
   requireUser,
 } from "@/lib/api/helpers"
-import { isUnlocked, orderedLessons } from "@/lib/services/lessons"
+import { isUnlocked, orderedLessons, visibleToStudents } from "@/lib/services/lessons"
+import { normaliseLesson } from "@/lib/lessons/normalise"
 
 export const runtime = "nodejs"
 
@@ -48,19 +49,22 @@ export async function GET(_req: Request, { params }: Params) {
     if (!canEdit && !enrollment) throw new ApiError(403, "You are not enrolled in this course")
 
     const completed = new Set((enrollment?.completedLessons ?? []).map(String))
-    const flat = orderedLessons(course)
+    // Students walk the published sequence; a draft left in the list would make
+    // them wait on a lesson they can't open.
+    const flat = orderedLessons(course, { publishedOnly: !canEdit })
 
     // Named `current` rather than `module`: assigning to `module` shadows the
     // CommonJS binding and Next flags it.
     const current = modules[position]
     const lessons = [...(current.lessons ?? [])]
       .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      .map(normaliseLesson)
+      .filter((lesson) => canEdit || visibleToStudents(lesson))
       .map((lesson) => {
-        const index = flat.findIndex((e) => String(e.lesson._id) === String(lesson._id))
+        const index = flat.findIndex((e) => String(e.lesson._id) === lesson._id)
         return {
           ...lesson,
-          _id: String(lesson._id),
-          completed: completed.has(String(lesson._id)),
+          completed: completed.has(lesson._id),
           unlocked: canEdit || isUnlocked(flat, index, completed),
         }
       })

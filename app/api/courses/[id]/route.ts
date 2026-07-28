@@ -1,6 +1,8 @@
 import { z } from "zod"
 
-import { Course, Enrollment, User } from "@/lib/models"
+import { Assignment, Course, Enrollment, User } from "@/lib/models"
+import { normaliseLesson } from "@/lib/lessons/normalise"
+import { visibleToStudents } from "@/lib/services/lessons"
 import {
   ApiError,
   assertObjectId,
@@ -41,10 +43,48 @@ export async function GET(_req: Request, { params }: Params) {
       .lean()
     if (!canEdit && !enrollment) throw new ApiError(403, "You are not enrolled in this course")
 
-    const lessonCount = (course.modules ?? []).reduce((n, m) => n + (m.lessons?.length ?? 0), 0)
+    // Lessons come back in the typed shape, and drafts (or lessons not yet
+    // released) are removed entirely for students rather than hidden in the UI —
+    // a title in the network response is still a leak.
+    const modules = (course.modules ?? []).map((m) => ({
+      ...m,
+      _id: String(m._id),
+      lessons: (m.lessons ?? [])
+        .map(normaliseLesson)
+        .filter((lesson) => canEdit || visibleToStudents(lesson)),
+    }))
+
+    const lessonCount = modules.reduce((n, m) => n + m.lessons.length, 0)
+
+    // Points and due dates for assignment lessons, so the module list can label
+    // the cards without a request per lesson.
+    const assignmentIds = modules
+      .flatMap((m) => m.lessons)
+      .map((l) => l.assignment?.assignmentId)
+      .filter((value): value is string => Boolean(value))
+
+    const assignments = await Assignment.find({ _id: { $in: assignmentIds } })
+      .select("points dueDate status")
+      .lean()
+    const assignmentById = new Map(assignments.map((a) => [String(a._id), a]))
+
+    const withMeta = modules.map((m) => ({
+      ...m,
+      lessons: m.lessons.map((lesson) => {
+        const assignment = lesson.assignment?.assignmentId
+          ? assignmentById.get(lesson.assignment.assignmentId)
+          : undefined
+        return {
+          ...lesson,
+          points: assignment?.points ?? null,
+          dueDate: assignment?.dueDate ?? null,
+        }
+      }),
+    }))
 
     return json({
       ...course,
+      modules: withMeta,
       viewer: {
         canEdit,
         enrolled: Boolean(enrollment),
@@ -58,26 +98,22 @@ export async function GET(_req: Request, { params }: Params) {
   }
 }
 
-const lessonSchema = z.object({
-  title: z.string().min(1),
-  description: z.string().optional(),
-  type: z.enum(["video", "reading", "interactive", "quiz", "assignment"]).default("reading"),
-  duration: z.string().optional(),
-  order: z.number().int().min(0),
-  content: z.string().optional(),
-  videoUrl: z.string().url().optional(),
-  materials: z
-    .array(z.object({ name: z.string(), url: z.string(), size: z.number().optional() }))
-    .default([]),
-})
-
+/**
+ * Modules can be renamed and reordered here, but their lessons cannot be
+ * written through this route.
+ *
+ * Lessons are type-specific now, and each one may own a linked Quiz or
+ * Assignment. A whole-tree replace would have to reproduce all of that
+ * correctly or it would quietly strip typed payloads and orphan the linked
+ * records. Lessons go through /api/lessons, which validates per type.
+ */
 const moduleSchema = z.object({
+  _id: z.string().optional(),
   title: z.string().min(1),
   description: z.string().optional(),
   order: z.number().int().min(0),
   status: z.enum(["locked", "available", "in-progress", "completed"]).default("available"),
   unlockDate: z.coerce.date().optional(),
-  lessons: z.array(lessonSchema).default([]),
 })
 
 const updateCourseSchema = z.object({
@@ -93,7 +129,7 @@ const updateCourseSchema = z.object({
   status: z.enum(["draft", "active", "completed", "upcoming", "archived"]).optional(),
   /** Reassign the teacher. Admin-only — enforced in the handler. */
   instructor: z.string().optional(),
-  /** Replaces the whole module tree — this is the course-content upload path. */
+  /** Rename/reorder modules. Lessons inside them are left untouched. */
   modules: z.array(moduleSchema).optional(),
 })
 
@@ -127,7 +163,30 @@ export async function PATCH(req: Request, { params }: Params) {
       }
     }
 
-    Object.assign(course, body)
+    // Modules are merged by id rather than assigned, because assigning the
+    // array would replace each module wholesale — and the lessons live inside
+    // it. A rename would silently delete a module's entire contents.
+    const { modules, ...scalarFields } = body
+    Object.assign(course, scalarFields)
+
+    if (modules) {
+      for (const incoming of modules) {
+        const existing = incoming._id
+          ? course.modules.find((m) => String(m._id) === incoming._id)
+          : undefined
+
+        if (existing) {
+          existing.title = incoming.title
+          existing.description = incoming.description
+          existing.order = incoming.order
+          existing.status = incoming.status
+          existing.unlockDate = incoming.unlockDate
+        } else {
+          course.modules.push({ ...incoming, lessons: [] } as never)
+        }
+      }
+    }
+
     await course.save()
 
     return json(course.toObject())

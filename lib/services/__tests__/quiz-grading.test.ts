@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { gradeAnswer, totalAttempt } from "@/lib/services/quiz-grading"
+import { countBlanks, gradeAnswer, seededShuffle, totalAttempt } from "@/lib/services/quiz-grading"
 import type { IQuizQuestion } from "@/lib/models/Quiz"
 
 function question(overrides: Partial<IQuizQuestion> = {}): IQuizQuestion {
@@ -9,7 +9,9 @@ function question(overrides: Partial<IQuizQuestion> = {}): IQuizQuestion {
     type: "multiple-choice",
     options: ["10", "12", "14"],
     correctAnswers: ["12"],
+    pairs: [],
     points: 2,
+    required: false,
     order: 0,
     ...overrides,
   }
@@ -60,6 +62,108 @@ describe("gradeAnswer", () => {
   it("leaves a question with no answer key unmarked rather than scoring zero", () => {
     const q = question({ correctAnswers: [] })
     expect(gradeAnswer(q, ["12"])).toEqual({ earned: null, correct: null })
+  })
+
+  describe("fill in the blank", () => {
+    const q = question({
+      type: "fill-blank",
+      prompt: "The capital of France is ___ and it sits on the ___.",
+      options: [],
+      // One entry per blank; "|" separates alternatives accepted for that blank.
+      correctAnswers: ["Paris", "Seine|River Seine"],
+    })
+
+    it("accepts every blank filled correctly", () => {
+      expect(gradeAnswer(q, ["paris", "  the seine "]).correct).toBe(false)
+      expect(gradeAnswer(q, ["Paris", "Seine"]).correct).toBe(true)
+    })
+
+    it("accepts any listed alternative for a blank", () => {
+      expect(gradeAnswer(q, ["paris", "river seine"]).correct).toBe(true)
+    })
+
+    it("marks it wrong when a single blank is wrong", () => {
+      expect(gradeAnswer(q, ["Paris", "Thames"]).correct).toBe(false)
+    })
+
+    it("marks it wrong when a blank is left empty", () => {
+      expect(gradeAnswer(q, ["Paris"]).correct).toBe(false)
+    })
+  })
+
+  describe("matching", () => {
+    const q = question({
+      type: "matching",
+      options: [],
+      correctAnswers: [],
+      pairs: [
+        { left: "Dog", right: "Puppy" },
+        { left: "Cat", right: "Kitten" },
+        { left: "Sheep", right: "Lamb" },
+      ],
+    })
+
+    it("marks every pair matched correctly", () => {
+      expect(gradeAnswer(q, ["Puppy", "Kitten", "Lamb"]).correct).toBe(true)
+    })
+
+    it("marks it wrong when one pair is swapped", () => {
+      expect(gradeAnswer(q, ["Puppy", "Lamb", "Kitten"]).correct).toBe(false)
+    })
+
+    it("marks it wrong when a pair is left unmatched", () => {
+      expect(gradeAnswer(q, ["Puppy", "Kitten"]).correct).toBe(false)
+    })
+  })
+
+  describe("ordering", () => {
+    // `options` is stored in the correct sequence.
+    const q = question({
+      type: "ordering",
+      options: ["Plant the seed", "Water it", "It sprouts", "It flowers"],
+      correctAnswers: [],
+    })
+
+    it("marks the right sequence correct", () => {
+      expect(
+        gradeAnswer(q, ["Plant the seed", "Water it", "It sprouts", "It flowers"]).correct,
+      ).toBe(true)
+    })
+
+    it("marks a wrong sequence incorrect even with the same items", () => {
+      expect(
+        gradeAnswer(q, ["Water it", "Plant the seed", "It sprouts", "It flowers"]).correct,
+      ).toBe(false)
+    })
+  })
+})
+
+describe("seededShuffle", () => {
+  const items = ["a", "b", "c", "d", "e", "f"]
+
+  it("is stable for the same seed, so options don't jump between renders", () => {
+    expect(seededShuffle(items, "attempt-1")).toEqual(seededShuffle(items, "attempt-1"))
+  })
+
+  it("differs between seeds, so two students see different orders", () => {
+    expect(seededShuffle(items, "attempt-1")).not.toEqual(seededShuffle(items, "attempt-2"))
+  })
+
+  it("keeps every item exactly once", () => {
+    expect([...seededShuffle(items, "x")].sort()).toEqual([...items].sort())
+  })
+
+  it("leaves the input untouched", () => {
+    const original = [...items]
+    seededShuffle(items, "x")
+    expect(items).toEqual(original)
+  })
+})
+
+describe("countBlanks", () => {
+  it("counts each ___ marker in the prompt", () => {
+    expect(countBlanks("The capital of France is ___ on the ___.")).toBe(2)
+    expect(countBlanks("No blanks here")).toBe(0)
   })
 })
 
