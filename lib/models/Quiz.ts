@@ -1,26 +1,16 @@
 import mongoose, { Schema, type Model, type Document, type Types } from "mongoose"
 
-export const QUESTION_TYPES = [
-  "multiple-choice",
-  "multiple-select",
-  "true-false",
-  "fill-blank",
-  "short-answer",
-  "essay",
-  "matching",
-  "ordering",
-] as const
-export type QuestionType = (typeof QUESTION_TYPES)[number]
+import { QUESTION_TYPES, type QuestionType } from "@/lib/quizzes/question-types"
 
-/** Everything except an essay can be marked by the platform. */
-export function isAutoGradable(type: QuestionType): boolean {
-  return type !== "essay"
-}
-
-/** Question types that present a fixed list of choices. */
-export function hasChoiceOptions(type: QuestionType): boolean {
-  return type === "multiple-choice" || type === "multiple-select" || type === "true-false"
-}
+// Question-type facts live in a database-free module so the browser can use
+// them too — see lib/quizzes/question-types.ts. Re-exported here so existing
+// server-side imports keep working.
+export {
+  QUESTION_TYPES,
+  isAutoGradable,
+  hasChoiceOptions,
+  type QuestionType,
+} from "@/lib/quizzes/question-types"
 
 export interface IMatchPair {
   left: string

@@ -1,32 +1,17 @@
 "use client"
 
 import { useRouter } from "next/navigation"
-import { BookOpen, Brain, CheckCircle, FileText, HelpCircle, Lock, PenTool, Play, Video } from "lucide-react"
+import { BookOpen, CheckCircle } from "lucide-react"
 
 import { useApi } from "@/hooks/use-api"
 import { useCourses } from "@/components/context/course-context"
 import { AsyncState } from "@/components/ui/async-state"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import type { ApiCourseDetail, ApiLesson } from "@/components/courses/course-modules"
-
-function typeIcon(type: ApiLesson["type"]) {
-  switch (type) {
-    case "video":
-      return <Video className="h-4 w-4" />
-    case "interactive":
-      return <Brain className="h-4 w-4" />
-    case "quiz":
-      return <HelpCircle className="h-4 w-4" />
-    case "assignment":
-      return <PenTool className="h-4 w-4" />
-    default:
-      return <FileText className="h-4 w-4" />
-  }
-}
+import { LessonCard } from "@/components/lessons/lesson-card"
+import type { ApiCourseDetail } from "@/components/courses/course-modules"
 
 /**
  * The Content tab: every module and lesson of the selected course, live.
@@ -167,50 +152,17 @@ export function CourseContent() {
                       {lessons.length === 0 && (
                         <p className="text-sm text-muted-foreground">No lessons in this module.</p>
                       )}
-                      {lessons.map((lesson, i) => {
-                        const open = unlocked(lesson._id)
-                        const isDone = completed.has(lesson._id)
-
-                        return (
-                          <div
-                            key={lesson._id}
-                            className={`flex items-center justify-between rounded-lg border p-3 ${
-                              open ? "cursor-pointer hover:bg-emerald-50" : "cursor-not-allowed bg-muted/40"
-                            }`}
-                            onClick={() =>
-                              open && router.push(`/courses/${data._id}/lessons/${lesson._id}`)
-                            }
-                          >
-                            <div className="flex items-center gap-3">
-                              <span className="w-6 text-xs text-muted-foreground">{i + 1}.</span>
-                              {isDone ? (
-                                <CheckCircle className="h-4 w-4 text-green-600" />
-                              ) : open ? (
-                                typeIcon(lesson.type)
-                              ) : (
-                                <Lock className="h-4 w-4 text-muted-foreground" />
-                              )}
-                              <div>
-                                <div className="text-sm font-medium">{lesson.title}</div>
-                                {lesson.description && (
-                                  <div className="text-xs text-muted-foreground">
-                                    {lesson.description}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <Badge variant="outline" className="text-xs">
-                                {lesson.type}
-                              </Badge>
-                              {lesson.duration && (
-                                <span className="text-xs text-muted-foreground">{lesson.duration}</span>
-                              )}
-                              {open && <Play className="h-4 w-4 text-emerald-600" />}
-                            </div>
-                          </div>
-                        )
-                      })}
+                      {lessons.map((lesson, i) => (
+                        <LessonCard
+                          key={lesson._id}
+                          lesson={lesson}
+                          index={i}
+                          completed={completed.has(lesson._id)}
+                          unlocked={unlocked(lesson._id)}
+                          canEdit={canEdit}
+                          onOpen={() => router.push(`/courses/${data._id}/lessons/${lesson._id}`)}
+                        />
+                      ))}
                     </CardContent>
                   </Card>
                 )

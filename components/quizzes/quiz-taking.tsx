@@ -6,43 +6,34 @@ import { AlertCircle, CheckCircle, Clock, Loader2, XCircle } from "lucide-react"
 
 import { useApi } from "@/hooks/use-api"
 import { apiMutate } from "@/lib/api/client"
+import { seededShuffle } from "@/lib/quizzes/question-types"
 import { AsyncState } from "@/components/ui/async-state"
 import { BackButton } from "@/components/ui/back-button"
 import { useConfirm } from "@/components/ui/confirm-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
-import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Textarea } from "@/components/ui/textarea"
-
-type QuestionType =
-  | "multiple-choice"
-  | "multiple-select"
-  | "true-false"
-  | "short-answer"
-  | "essay"
-
-interface Question {
-  _id: string
-  prompt: string
-  type: QuestionType
-  options: string[]
-  points: number
-  order: number
-}
+import {
+  QuestionInput,
+  isAnswered,
+  type TakeableQuestion,
+} from "@/components/quizzes/question-input"
 
 interface QuizResponse {
   _id: string
   title: string
   description?: string
+  instructions?: string
   kind: "quiz" | "test" | "practice"
-  questions: Question[]
+  questions: TakeableQuestion[]
   timeLimit: number
   attemptsAllowed: number
   showAnswers: boolean
+  shuffleQuestions: boolean
+  shuffleAnswers: boolean
+  oneQuestionAtATime: boolean
+  allowBacktrack: boolean
   totalPoints: number
   canEdit: boolean
   canAttempt?: boolean
@@ -84,10 +75,18 @@ export function QuizTaking({ quizId }: { quizId: string }) {
   const startedAt = useRef<Date>(new Date())
   const [confirm, confirmDialog] = useConfirm()
 
-  const questions = useMemo(
-    () => [...(data?.questions ?? [])].sort((a, b) => a.order - b.order),
-    [data],
-  )
+  // One seed per sitting drives every shuffle, so the order is stable while the
+  // student answers but differs between students and between attempts.
+  const shuffleSeed = useRef(`${quizId}-${startedAt.current.getTime()}`)
+
+  const questions = useMemo(() => {
+    const ordered = [...(data?.questions ?? [])].sort((a, b) => a.order - b.order)
+    if (!data?.shuffleQuestions) return ordered
+    return seededShuffle(ordered, shuffleSeed.current)
+  }, [data])
+
+  /** How far the student has reached, for a forward-only quiz. */
+  const [furthest, setFurthest] = useState(0)
 
   const submit = useRef<(auto?: boolean) => Promise<void>>(async () => {})
 
@@ -95,7 +94,18 @@ export function QuizTaking({ quizId }: { quizId: string }) {
     if (!data || result) return
 
     if (!auto) {
-      const unanswered = questions.filter((q) => (answers[q._id] ?? []).length === 0).length
+      const unanswered = questions.filter((q) => !isAnswered(q, answers[q._id])).length
+      const missedRequired = questions.filter(
+        (q) => q.required && !isAnswered(q, answers[q._id]),
+      )
+
+      if (missedRequired.length > 0) {
+        setSubmitError(
+          `Question ${questions.indexOf(missedRequired[0]) + 1} has to be answered before you can submit.`,
+        )
+        setIndex(questions.indexOf(missedRequired[0]))
+        return
+      }
       const ok = await confirm({
         title: "Submit your answers?",
         description:
@@ -141,16 +151,10 @@ export function QuizTaking({ quizId }: { quizId: string }) {
   const setAnswer = (questionId: string, response: string[]) =>
     setAnswers((a) => ({ ...a, [questionId]: response }))
 
-  const toggleMulti = (questionId: string, option: string) =>
-    setAnswers((a) => {
-      const current = a[questionId] ?? []
-      return {
-        ...a,
-        [questionId]: current.includes(option)
-          ? current.filter((o) => o !== option)
-          : [...current, option],
-      }
-    })
+  const goTo = (target: number) => {
+    setIndex(target)
+    setFurthest((f) => Math.max(f, target))
+  }
 
   if (result) {
     const byQuestion = new Map(result.answers.map((a) => [a.question, a]))
@@ -312,8 +316,9 @@ export function QuizTaking({ quizId }: { quizId: string }) {
                 />
 
                 {questions.map((question, i) => {
-                  if (i !== index) return null
-                  const given = answers[question._id] ?? []
+                  // A one-at-a-time quiz shows only the current question; when
+                  // that's off, the whole paper is on one page.
+                  if (data.oneQuestionAtATime !== false && i !== index) return null
 
                   return (
                     <Card key={question._id}>
@@ -321,74 +326,29 @@ export function QuizTaking({ quizId }: { quizId: string }) {
                         <div className="flex items-start justify-between gap-3">
                           <CardTitle className="text-lg">
                             Question {i + 1} of {questions.length}
+                            {question.required && (
+                              <span className="ml-1 text-red-600" title="Required">
+                                *
+                              </span>
+                            )}
                           </CardTitle>
                           <Badge variant="outline">
                             {question.points} pt{question.points === 1 ? "" : "s"}
                           </Badge>
                         </div>
-                        <p className="whitespace-pre-wrap text-base">{question.prompt}</p>
+                        {question.type !== "fill-blank" && (
+                          <p className="whitespace-pre-wrap text-base">{question.prompt}</p>
+                        )}
                       </CardHeader>
 
                       <CardContent className="space-y-3">
-                        {(question.type === "multiple-choice" ||
-                          question.type === "true-false") && (
-                          <RadioGroup
-                            value={given[0] ?? ""}
-                            onValueChange={(v) => setAnswer(question._id, [v])}
-                          >
-                            {question.options.map((option) => (
-                              <div key={option} className="flex items-center gap-2">
-                                <RadioGroupItem value={option} id={`${question._id}-${option}`} />
-                                <Label htmlFor={`${question._id}-${option}`} className="font-normal">
-                                  {option}
-                                </Label>
-                              </div>
-                            ))}
-                          </RadioGroup>
-                        )}
-
-                        {question.type === "multiple-select" && (
-                          <div className="space-y-2">
-                            {question.options.map((option) => (
-                              <div key={option} className="flex items-center gap-2">
-                                <Checkbox
-                                  id={`${question._id}-${option}`}
-                                  checked={given.includes(option)}
-                                  onCheckedChange={() => toggleMulti(question._id, option)}
-                                />
-                                <Label htmlFor={`${question._id}-${option}`} className="font-normal">
-                                  {option}
-                                </Label>
-                              </div>
-                            ))}
-                            <p className="text-xs text-muted-foreground">
-                              Tick every answer that applies.
-                            </p>
-                          </div>
-                        )}
-
-                        {question.type === "short-answer" && (
-                          <Textarea
-                            rows={2}
-                            value={given[0] ?? ""}
-                            onChange={(e) => setAnswer(question._id, [e.target.value])}
-                            placeholder="Type your answer"
-                          />
-                        )}
-
-                        {question.type === "essay" && (
-                          <>
-                            <Textarea
-                              rows={10}
-                              value={given[0] ?? ""}
-                              onChange={(e) => setAnswer(question._id, [e.target.value])}
-                              placeholder="Write your answer"
-                            />
-                            <p className="text-xs text-muted-foreground">
-                              Your teacher marks this one by hand.
-                            </p>
-                          </>
-                        )}
+                        <QuestionInput
+                          question={question}
+                          value={answers[question._id] ?? []}
+                          onChange={(response) => setAnswer(question._id, response)}
+                          shuffleSeed={shuffleSeed.current}
+                          shuffleAnswers={Boolean(data.shuffleAnswers)}
+                        />
                       </CardContent>
                     </Card>
                   )
@@ -396,41 +356,64 @@ export function QuizTaking({ quizId }: { quizId: string }) {
 
                 {submitError && <p className="text-sm text-red-600">{submitError}</p>}
 
-                <div className="flex items-center justify-between gap-3">
-                  <Button
-                    variant="outline"
-                    disabled={index === 0}
-                    onClick={() => setIndex((i) => i - 1)}
-                  >
-                    Previous
-                  </Button>
-
-                  <div className="flex flex-wrap justify-center gap-1">
-                    {questions.map((q, i) => (
-                      <button
-                        type="button"
-                        key={q._id}
-                        onClick={() => setIndex(i)}
-                        className={`h-7 w-7 rounded text-xs ${
-                          i === index
-                            ? "bg-emerald-600 text-white"
-                            : (answers[q._id] ?? []).length > 0
-                              ? "bg-emerald-100 text-emerald-800"
-                              : "bg-muted text-muted-foreground"
-                        }`}
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  {data.oneQuestionAtATime !== false ? (
+                    <>
+                      <Button
+                        variant="outline"
+                        // A forward-only quiz has no way back once you've moved on.
+                        disabled={index === 0 || data.allowBacktrack === false}
+                        onClick={() => goTo(index - 1)}
                       >
-                        {i + 1}
-                      </button>
-                    ))}
-                  </div>
+                        Previous
+                      </Button>
 
-                  {index < questions.length - 1 ? (
-                    <Button onClick={() => setIndex((i) => i + 1)}>Next</Button>
+                      <div className="flex flex-wrap justify-center gap-1">
+                        {questions.map((q, i) => {
+                          // With backtracking off, only the question you're on
+                          // and ones you haven't reached yet are navigable.
+                          const locked = data.allowBacktrack === false && i < furthest
+                          return (
+                            <button
+                              type="button"
+                              key={q._id}
+                              disabled={locked}
+                              title={locked ? "You can't return to this question" : undefined}
+                              onClick={() => goTo(i)}
+                              className={`h-7 w-7 rounded text-xs ${
+                                i === index
+                                  ? "bg-emerald-600 text-white"
+                                  : isAnswered(q, answers[q._id])
+                                    ? "bg-emerald-100 text-emerald-800"
+                                    : "bg-muted text-muted-foreground"
+                              } ${locked ? "cursor-not-allowed opacity-50" : ""}`}
+                            >
+                              {i + 1}
+                            </button>
+                          )
+                        })}
+                      </div>
+
+                      {index < questions.length - 1 ? (
+                        <Button onClick={() => goTo(index + 1)}>Next</Button>
+                      ) : (
+                        <Button onClick={() => void submit.current()} disabled={submitting}>
+                          {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                          Submit
+                        </Button>
+                      )}
+                    </>
                   ) : (
-                    <Button onClick={() => void submit.current()} disabled={submitting}>
-                      {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      Submit
-                    </Button>
+                    <>
+                      <p className="text-sm text-muted-foreground">
+                        {questions.filter((q) => isAnswered(q, answers[q._id])).length} of{" "}
+                        {questions.length} answered
+                      </p>
+                      <Button onClick={() => void submit.current()} disabled={submitting}>
+                        {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Submit quiz
+                      </Button>
+                    </>
                   )}
                 </div>
               </>

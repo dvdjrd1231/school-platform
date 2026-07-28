@@ -1,13 +1,12 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { GripVertical, Loader2, Plus, Trash2 } from "lucide-react"
+import { Loader2 } from "lucide-react"
 
 import { useApi } from "@/hooks/use-api"
 import { apiMutate } from "@/lib/api/client"
 import { useCourses } from "@/components/context/course-context"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
@@ -19,66 +18,42 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
-
-type QuestionType =
-  | "multiple-choice"
-  | "multiple-select"
-  | "true-false"
-  | "short-answer"
-  | "essay"
-
-interface DraftQuestion {
-  key: string
-  prompt: string
-  type: QuestionType
-  options: string[]
-  correctAnswers: string[]
-  points: number
-  explanation: string
-}
+import {
+  blankQuestion,
+  nextQuestionKey,
+  questionsToPayload,
+  validateQuestions,
+  type QuestionDraft,
+} from "@/components/quizzes/question-builder"
+import {
+  QuizFields,
+  blankQuizSettings,
+  type QuizSettings,
+} from "@/components/lessons/fields/quiz-fields"
 
 interface QuizResponse {
   _id: string
   title: string
   description?: string
+  instructions?: string
   kind: "quiz" | "test" | "practice"
   course: { _id: string } | string
-  questions: {
-    _id: string
-    prompt: string
-    type: QuestionType
-    options: string[]
-    correctAnswers: string[]
-    points: number
-    explanation?: string
-    order: number
-  }[]
+  questions: Record<string, unknown>[]
   timeLimit: number
   attemptsAllowed: number
+  passingScore: number
+  shuffleQuestions: boolean
+  shuffleAnswers: boolean
+  oneQuestionAtATime: boolean
+  allowBacktrack: boolean
+  releaseResults: "immediately" | "after-review"
   showAnswers: boolean
+  showExplanations: boolean
+  availableFrom?: string
+  closesAt?: string
   dueDate?: string
   status: "draft" | "published"
-}
-
-let keyCounter = 0
-const nextKey = () => `q${++keyCounter}`
-
-function blankQuestion(): DraftQuestion {
-  return {
-    key: nextKey(),
-    prompt: "",
-    type: "multiple-choice",
-    options: ["", ""],
-    correctAnswers: [],
-    points: 1,
-    explanation: "",
-  }
-}
-
-function needsOptions(type: QuestionType): boolean {
-  return type === "multiple-choice" || type === "multiple-select"
 }
 
 interface Props {
@@ -92,12 +67,19 @@ interface Props {
   onSaved: () => void
 }
 
+function toLocalInput(value?: string): string {
+  if (!value) return ""
+  const date = new Date(value)
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
+}
+
 /**
- * Write a quiz, test, or a set of practice problems for a lesson.
+ * The standalone quiz editor, for quizzes that aren't a lesson of their own —
+ * practice problems attached to a lesson, and quizzes created from the Quizzes
+ * page.
  *
- * Question types cover what a school actually sets: pick one, pick several,
- * true/false, a typed short answer (marked automatically, ignoring case and
- * spacing), and an essay the teacher marks afterwards.
+ * Shares the settings panel and the question builder with the lesson form, so
+ * a question type or setting added in one place works in both.
  */
 export function QuizEditorDialog({
   open,
@@ -110,158 +92,118 @@ export function QuizEditorDialog({
   const { courses } = useCourses()
   const existing = useApi<QuizResponse>(open && quizId ? `/api/quizzes/${quizId}` : null)
 
-  const [form, setForm] = useState({
+  const [basics, setBasics] = useState({
     title: "",
     description: "",
     kind: "quiz" as QuizResponse["kind"],
     course: defaultCourseId ?? "",
-    timeLimit: 0,
-    attemptsAllowed: 1,
-    showAnswers: true,
     dueDate: "",
-    status: "draft" as QuizResponse["status"],
   })
-  const [questions, setQuestions] = useState<DraftQuestion[]>([blankQuestion()])
+  const [settings, setSettings] = useState<QuizSettings>(blankQuizSettings)
+  const [questions, setQuestions] = useState<QuestionDraft[]>([blankQuestion()])
   const [error, setError] = useState("")
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    if (!open) return
-    if (!quizId) {
-      setForm({
-        title: "",
-        description: "",
-        kind: lessonId ? "practice" : "quiz",
-        course: defaultCourseId ?? "",
-        timeLimit: 0,
-        attemptsAllowed: 1,
-        showAnswers: true,
-        dueDate: "",
-        status: "draft",
-      })
-      setQuestions([blankQuestion()])
-      setError("")
-    }
+    if (!open || quizId) return
+    setBasics({
+      title: "",
+      description: "",
+      kind: lessonId ? "practice" : "quiz",
+      course: defaultCourseId ?? "",
+      dueDate: "",
+    })
+    setSettings(blankQuizSettings())
+    setQuestions([blankQuestion()])
+    setError("")
   }, [open, quizId, defaultCourseId, lessonId])
 
   useEffect(() => {
     const quiz = existing.data
     if (!quiz) return
-    setForm({
+
+    setBasics({
       title: quiz.title,
       description: quiz.description ?? "",
       kind: quiz.kind,
       course: typeof quiz.course === "string" ? quiz.course : quiz.course._id,
-      timeLimit: quiz.timeLimit,
-      attemptsAllowed: quiz.attemptsAllowed,
-      showAnswers: quiz.showAnswers,
       dueDate: quiz.dueDate ? quiz.dueDate.slice(0, 10) : "",
-      status: quiz.status,
+    })
+    setSettings({
+      instructions: quiz.instructions ?? "",
+      timeLimit: String(quiz.timeLimit ?? 0),
+      attemptsAllowed: String(quiz.attemptsAllowed ?? 1),
+      passingScore: String(quiz.passingScore ?? 0),
+      shuffleQuestions: Boolean(quiz.shuffleQuestions),
+      shuffleAnswers: Boolean(quiz.shuffleAnswers),
+      oneQuestionAtATime: quiz.oneQuestionAtATime !== false,
+      allowBacktrack: quiz.allowBacktrack !== false,
+      releaseResults: quiz.releaseResults ?? "immediately",
+      showAnswers: quiz.showAnswers !== false,
+      showExplanations: quiz.showExplanations !== false,
+      availableFrom: toLocalInput(quiz.availableFrom),
+      closesAt: toLocalInput(quiz.closesAt),
     })
     setQuestions(
-      [...quiz.questions]
-        .sort((a, b) => a.order - b.order)
-        .map((q) => ({
-          key: nextKey(),
-          prompt: q.prompt,
-          type: q.type,
-          options: q.options.length > 0 ? q.options : ["", ""],
-          correctAnswers: q.correctAnswers,
-          points: q.points,
-          explanation: q.explanation ?? "",
-        })),
+      quiz.questions.length === 0
+        ? [blankQuestion()]
+        : quiz.questions.map((q) => ({
+            key: nextQuestionKey(),
+            prompt: (q.prompt as string) ?? "",
+            type: (q.type as QuestionDraft["type"]) ?? "multiple-choice",
+            options: ((q.options as string[]) ?? []).length ? (q.options as string[]) : ["", ""],
+            correctAnswers: (q.correctAnswers as string[]) ?? [],
+            pairs: ((q.pairs as QuestionDraft["pairs"]) ?? []).length
+              ? (q.pairs as QuestionDraft["pairs"])
+              : [
+                  { left: "", right: "" },
+                  { left: "", right: "" },
+                ],
+            points: String(q.points ?? 1),
+            explanation: (q.explanation as string) ?? "",
+            required: Boolean(q.required),
+            mediaUrl: (q.media as { url?: string })?.url ?? "",
+            mediaKind: ((q.media as { kind?: QuestionDraft["mediaKind"] })?.kind ??
+              "image") as QuestionDraft["mediaKind"],
+          })),
     )
   }, [existing.data])
 
-  const updateQuestion = (key: string, patch: Partial<DraftQuestion>) =>
-    setQuestions((qs) => qs.map((q) => (q.key === key ? { ...q, ...patch } : q)))
-
-  const changeType = (key: string, type: QuestionType) =>
-    setQuestions((qs) =>
-      qs.map((q) => {
-        if (q.key !== key) return q
-        if (type === "true-false") {
-          return { ...q, type, options: ["True", "False"], correctAnswers: [] }
-        }
-        if (needsOptions(type)) {
-          return {
-            ...q,
-            type,
-            options: q.options.length >= 2 ? q.options : ["", ""],
-            correctAnswers: [],
-          }
-        }
-        return { ...q, type, options: [], correctAnswers: type === "essay" ? [] : q.correctAnswers }
-      }),
-    )
-
-  const toggleCorrect = (key: string, option: string, multi: boolean) =>
-    setQuestions((qs) =>
-      qs.map((q) => {
-        if (q.key !== key) return q
-        if (!multi) return { ...q, correctAnswers: [option] }
-        const has = q.correctAnswers.includes(option)
-        return {
-          ...q,
-          correctAnswers: has
-            ? q.correctAnswers.filter((a) => a !== option)
-            : [...q.correctAnswers, option],
-        }
-      }),
-    )
-
-  const validate = (): string | null => {
-    if (form.title.trim().length < 2) return "Give the quiz a title"
-    if (!form.course) return "Choose which class this is for"
-    if (questions.length === 0) return "Add at least one question"
-
-    for (const [i, q] of questions.entries()) {
-      if (!q.prompt.trim()) return `Question ${i + 1} needs a prompt`
-
-      if (needsOptions(q.type)) {
-        const filled = q.options.filter((o) => o.trim())
-        if (filled.length < 2) return `Question ${i + 1} needs at least two options`
-        if (q.correctAnswers.length === 0) return `Mark the correct answer for question ${i + 1}`
-      }
-      if (q.type === "true-false" && q.correctAnswers.length === 0) {
-        return `Mark True or False for question ${i + 1}`
-      }
-      if (q.type === "short-answer" && q.correctAnswers.filter((a) => a.trim()).length === 0) {
-        return `Question ${i + 1} needs at least one accepted answer`
-      }
-    }
-    return null
-  }
-
   const save = async (publish: boolean) => {
-    const problem = validate()
+    setError("")
+    if (basics.title.trim().length < 2) return setError("Give the quiz a title")
+    if (!basics.course) return setError("Choose which class this is for")
+    if (questions.length === 0) return setError("Add at least one question")
+
+    const problem = validateQuestions(questions)
     if (problem) return setError(problem)
 
-    setError("")
     setSaving(true)
 
     const payload = {
-      title: form.title.trim(),
-      description: form.description.trim() || undefined,
-      kind: form.kind,
-      course: form.course,
+      title: basics.title.trim(),
+      description: basics.description.trim() || undefined,
+      instructions: settings.instructions.trim() || undefined,
+      kind: basics.kind,
+      course: basics.course,
       lesson: lessonId,
-      timeLimit: form.timeLimit,
-      attemptsAllowed: form.attemptsAllowed,
-      showAnswers: form.showAnswers,
-      dueDate: form.dueDate ? new Date(form.dueDate).toISOString() : undefined,
+      questions: questionsToPayload(questions),
+      timeLimit: Number(settings.timeLimit) || 0,
+      attemptsAllowed: Number(settings.attemptsAllowed) || 0,
+      passingScore: Number(settings.passingScore) || 0,
+      shuffleQuestions: settings.shuffleQuestions,
+      shuffleAnswers: settings.shuffleAnswers,
+      oneQuestionAtATime: settings.oneQuestionAtATime,
+      allowBacktrack: settings.allowBacktrack,
+      releaseResults: settings.releaseResults,
+      showAnswers: settings.showAnswers,
+      showExplanations: settings.showExplanations,
+      availableFrom: settings.availableFrom
+        ? new Date(settings.availableFrom).toISOString()
+        : undefined,
+      closesAt: settings.closesAt ? new Date(settings.closesAt).toISOString() : undefined,
+      dueDate: basics.dueDate ? new Date(basics.dueDate).toISOString() : undefined,
       status: publish ? "published" : "draft",
-      questions: questions.map((q, index) => ({
-        prompt: q.prompt.trim(),
-        type: q.type,
-        options: needsOptions(q.type) || q.type === "true-false"
-          ? q.options.filter((o) => o.trim())
-          : [],
-        correctAnswers: q.correctAnswers.filter((a) => a.trim()),
-        points: q.points,
-        explanation: q.explanation.trim() || undefined,
-        order: index,
-      })),
     }
 
     try {
@@ -284,37 +226,39 @@ export function QuizEditorDialog({
         <DialogHeader>
           <DialogTitle>{quizId ? "Edit quiz" : "Create a quiz"}</DialogTitle>
           <DialogDescription>
-            Multiple choice, select-all and true/false are marked automatically. Short answers are
-            matched ignoring case and spacing. Essays come to you to mark.
+            Multiple choice, select-all, true/false, fill-in-the-blank, matching and ordering are
+            marked automatically. Essays come to you to mark.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6">
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>Title</Label>
+              <Label htmlFor="quiz-title">Title</Label>
               <Input
-                value={form.title}
-                onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+                id="quiz-title"
+                value={basics.title}
+                onChange={(e) => setBasics((b) => ({ ...b, title: e.target.value }))}
                 placeholder="Unit 1 check-up"
               />
             </div>
 
             <div className="space-y-2">
-              <Label>Instructions (optional)</Label>
+              <Label htmlFor="quiz-description">Description (optional)</Label>
               <Textarea
+                id="quiz-description"
                 rows={2}
-                value={form.description}
-                onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                value={basics.description}
+                onChange={(e) => setBasics((b) => ({ ...b, description: e.target.value }))}
               />
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-2">
                 <Label>Class</Label>
                 <Select
-                  value={form.course || undefined}
-                  onValueChange={(v) => setForm((f) => ({ ...f, course: v }))}
+                  value={basics.course || undefined}
+                  onValueChange={(course) => setBasics((b) => ({ ...b, course }))}
                   disabled={Boolean(quizId)}
                 >
                   <SelectTrigger>
@@ -333,8 +277,10 @@ export function QuizEditorDialog({
               <div className="space-y-2">
                 <Label>Kind</Label>
                 <Select
-                  value={form.kind}
-                  onValueChange={(v) => setForm((f) => ({ ...f, kind: v as QuizResponse["kind"] }))}
+                  value={basics.kind}
+                  onValueChange={(kind) =>
+                    setBasics((b) => ({ ...b, kind: kind as QuizResponse["kind"] }))
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -346,252 +292,31 @@ export function QuizEditorDialog({
                   </SelectContent>
                 </Select>
               </div>
-            </div>
 
-            <div className="grid gap-4 sm:grid-cols-3">
               <div className="space-y-2">
-                <Label>Time limit (min)</Label>
+                <Label htmlFor="quiz-due">Due date</Label>
                 <Input
-                  type="number"
-                  min={0}
-                  value={form.timeLimit}
-                  onChange={(e) => setForm((f) => ({ ...f, timeLimit: Number(e.target.value) || 0 }))}
-                />
-                <p className="text-xs text-muted-foreground">0 = untimed</p>
-              </div>
-              <div className="space-y-2">
-                <Label>Attempts allowed</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={form.attemptsAllowed}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, attemptsAllowed: Number(e.target.value) || 0 }))
-                  }
-                />
-                <p className="text-xs text-muted-foreground">0 = unlimited</p>
-              </div>
-              <div className="space-y-2">
-                <Label>Due date</Label>
-                <Input
+                  id="quiz-due"
                   type="date"
-                  value={form.dueDate}
-                  onChange={(e) => setForm((f) => ({ ...f, dueDate: e.target.value }))}
+                  value={basics.dueDate}
+                  onChange={(e) => setBasics((b) => ({ ...b, dueDate: e.target.value }))}
                 />
               </div>
             </div>
-
-            <div className="flex items-center justify-between rounded-md border p-3">
-              <div>
-                <Label>Show answers after submitting</Label>
-                <p className="text-xs text-muted-foreground">
-                  Students see which they got right, plus any explanation you wrote.
-                </p>
-              </div>
-              <Switch
-                checked={form.showAnswers}
-                onCheckedChange={(v) => setForm((f) => ({ ...f, showAnswers: v }))}
-              />
-            </div>
           </div>
 
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-semibold">
-                Questions ({questions.length}) ·{" "}
-                {questions.reduce((sum, q) => sum + q.points, 0)} points
-              </h3>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setQuestions((qs) => [...qs, blankQuestion()])}
-              >
-                <Plus className="mr-2 h-4 w-4" />
-                Add question
-              </Button>
-            </div>
+          <QuizFields
+            value={settings}
+            onChange={(patch) => setSettings((s) => ({ ...s, ...patch }))}
+            questions={questions}
+            onQuestionsChange={setQuestions}
+          />
 
-            {questions.map((question, index) => (
-              <Card key={question.key}>
-                <CardContent className="space-y-3 pt-4">
-                  <div className="flex items-start gap-2">
-                    <GripVertical className="mt-2 h-4 w-4 shrink-0 text-muted-foreground" />
-                    <div className="flex-1 space-y-2">
-                      <Label>Question {index + 1}</Label>
-                      <Textarea
-                        rows={2}
-                        value={question.prompt}
-                        onChange={(e) => updateQuestion(question.key, { prompt: e.target.value })}
-                        placeholder="What is 3 × 4?"
-                      />
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="text-red-600"
-                      onClick={() =>
-                        setQuestions((qs) => qs.filter((q) => q.key !== question.key))
-                      }
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      <span className="sr-only">Remove question</span>
-                    </Button>
-                  </div>
-
-                  <div className="grid gap-3 sm:grid-cols-[1fr_120px]">
-                    <div className="space-y-2">
-                      <Label>Type</Label>
-                      <Select
-                        value={question.type}
-                        onValueChange={(v) => changeType(question.key, v as QuestionType)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="multiple-choice">Multiple choice (one answer)</SelectItem>
-                          <SelectItem value="multiple-select">Select all that apply</SelectItem>
-                          <SelectItem value="true-false">True / False</SelectItem>
-                          <SelectItem value="short-answer">Short answer</SelectItem>
-                          <SelectItem value="essay">Essay (you mark it)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Points</Label>
-                      <Input
-                        type="number"
-                        min={0}
-                        value={question.points}
-                        onChange={(e) =>
-                          updateQuestion(question.key, { points: Number(e.target.value) || 0 })
-                        }
-                      />
-                    </div>
-                  </div>
-
-                  {question.type === "true-false" && (
-                    <div className="space-y-2">
-                      <Label>Correct answer</Label>
-                      <div className="flex gap-4">
-                        {["True", "False"].map((option) => (
-                          <label key={option} className="flex items-center gap-2 text-sm">
-                            <input
-                              type="radio"
-                              name={`tf-${question.key}`}
-                              checked={question.correctAnswers[0] === option}
-                              onChange={() => toggleCorrect(question.key, option, false)}
-                            />
-                            {option}
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {needsOptions(question.type) && (
-                    <div className="space-y-2">
-                      <Label>
-                        Options —{" "}
-                        {question.type === "multiple-select"
-                          ? "tick every correct one"
-                          : "tick the correct one"}
-                      </Label>
-                      {question.options.map((option, oi) => (
-                        <div key={oi} className="flex items-center gap-2">
-                          <input
-                            type={question.type === "multiple-select" ? "checkbox" : "radio"}
-                            name={`opt-${question.key}`}
-                            checked={question.correctAnswers.includes(option) && option !== ""}
-                            disabled={!option.trim()}
-                            onChange={() =>
-                              toggleCorrect(
-                                question.key,
-                                option,
-                                question.type === "multiple-select",
-                              )
-                            }
-                          />
-                          <Input
-                            value={option}
-                            placeholder={`Option ${oi + 1}`}
-                            onChange={(e) => {
-                              const previous = option
-                              const options = [...question.options]
-                              options[oi] = e.target.value
-                              // Keep the answer key pointing at the renamed option.
-                              updateQuestion(question.key, {
-                                options,
-                                correctAnswers: question.correctAnswers.map((a) =>
-                                  a === previous ? e.target.value : a,
-                                ),
-                              })
-                            }}
-                          />
-                          {question.options.length > 2 && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() =>
-                                updateQuestion(question.key, {
-                                  options: question.options.filter((_, i) => i !== oi),
-                                  correctAnswers: question.correctAnswers.filter((a) => a !== option),
-                                })
-                              }
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              <span className="sr-only">Remove option</span>
-                            </Button>
-                          )}
-                        </div>
-                      ))}
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() =>
-                          updateQuestion(question.key, { options: [...question.options, ""] })
-                        }
-                      >
-                        <Plus className="mr-2 h-4 w-4" />
-                        Add option
-                      </Button>
-                    </div>
-                  )}
-
-                  {question.type === "short-answer" && (
-                    <div className="space-y-2">
-                      <Label>Accepted answers</Label>
-                      <Input
-                        value={question.correctAnswers.join(", ")}
-                        onChange={(e) =>
-                          updateQuestion(question.key, {
-                            correctAnswers: e.target.value.split(",").map((a) => a.trim()),
-                          })
-                        }
-                        placeholder="12, twelve"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Comma separated. Any one of them counts as correct.
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <Label>Explanation (optional)</Label>
-                    <Input
-                      value={question.explanation}
-                      onChange={(e) =>
-                        updateQuestion(question.key, { explanation: e.target.value })
-                      }
-                      placeholder="Shown after submitting, if answers are revealed"
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && (
+            <p role="alert" className="text-sm text-red-600">
+              {error}
+            </p>
+          )}
         </div>
 
         <DialogFooter>

@@ -1,6 +1,8 @@
 import { z } from "zod"
 
 import { Assignment, Course, Enrollment, Notification, Submission } from "@/lib/models"
+import { FILE_TYPE_GROUPS, SUBMISSION_TYPES } from "@/lib/models/Assignment"
+import { sanitiseLessonHtml } from "@/lib/lessons/sanitise"
 import {
   ApiError,
   assertObjectId,
@@ -61,14 +63,45 @@ export async function GET(_req: Request, { params }: Params) {
 const updateSchema = z.object({
   title: z.string().min(2).max(200).optional(),
   description: z.string().max(10_000).optional(),
+  /** Rich text; sanitised below before it is stored. */
+  instructions: z.string().max(200_000).optional(),
   dueDate: z.coerce.date().optional(),
   points: z.number().min(0).max(10_000).optional(),
   category: z.enum(["homework", "quiz", "exam", "project", "participation"]).optional(),
   status: z.enum(["draft", "published", "closed"]).optional(),
   allowLateSubmission: z.boolean().optional(),
   latePenaltyPerDay: z.number().min(0).max(100).optional(),
+  lateMessage: z.string().max(500).optional(),
+
+  submissionType: z.enum(SUBMISSION_TYPES).optional(),
+  allowedFileTypes: z.array(z.enum(FILE_TYPE_GROUPS)).optional(),
+  maxFileSizeMb: z.number().int().min(1).max(500).optional(),
+  maxFiles: z.number().int().min(1).max(20).optional(),
+  attemptsAllowed: z.number().int().min(0).max(50).optional(),
+  allowResubmission: z.boolean().optional(),
+
+  rubric: z
+    .array(
+      z.object({
+        criterion: z.string().min(1).max(200),
+        description: z.string().max(1000).optional(),
+        points: z.number().min(0).max(10_000),
+      }),
+    )
+    .max(30)
+    .optional(),
+  gradingInstructions: z.string().max(10_000).optional(),
+  groupAssignment: z.boolean().optional(),
+
   attachments: z
-    .array(z.object({ name: z.string(), url: z.string(), size: z.number().optional() }))
+    .array(
+      z.object({
+        name: z.string(),
+        url: z.string(),
+        size: z.number().optional(),
+        fileId: z.string().optional(),
+      }),
+    )
     .optional(),
 })
 
@@ -107,6 +140,11 @@ export async function PATCH(req: Request, { params }: Params) {
 
     const wasPublished = assignment.status === "published"
     Object.assign(assignment, body)
+    // Instructions are rich text shown to every student in the class, so they
+    // are cleaned on the way in rather than trusted at render time.
+    if (body.instructions !== undefined) {
+      assignment.instructions = body.instructions ? sanitiseLessonHtml(body.instructions) : undefined
+    }
     await assignment.save()
 
     if (!wasPublished && assignment.status === "published") {

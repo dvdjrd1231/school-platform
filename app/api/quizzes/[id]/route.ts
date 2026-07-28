@@ -12,6 +12,7 @@ import {
   requireUser,
 } from "@/lib/api/helpers"
 import { courseScope } from "@/lib/api/scope"
+import { seededShuffle } from "@/lib/services/quiz-grading"
 
 export const runtime = "nodejs"
 
@@ -64,13 +65,42 @@ export async function GET(_req: Request, { params }: Params) {
     const attemptsLeft =
       quiz.attemptsAllowed === 0 ? Infinity : quiz.attemptsAllowed - attempts.length
 
+    // Stripping correctAnswers isn't enough for every type — two of them carry
+    // the answer in their presentation:
+    //
+    //  - `matching` stores left→right pairs, so sending the pairs *is* sending
+    //    the answer key. The student gets the left-hand items and a shuffled
+    //    pool of right-hand values, with no pairing between them.
+    //  - `ordering` stores its options already in the correct sequence, so
+    //    sending them in order gives the answer away. They are shuffled first.
+    //
+    // The shuffle is seeded per student and per quiz, so it stays put across
+    // refetches (the order can't be rerolled to fish for the original) while
+    // differing between students.
+    const seed = `${id}:${me.id}`
+
     return json({
       ...quiz,
-      questions: quiz.questions.map((q) => ({
-        ...q,
-        correctAnswers: [],
-        explanation: undefined,
-      })),
+      questions: quiz.questions.map((q) => {
+        const base = { ...q, correctAnswers: [], explanation: undefined }
+
+        if (q.type === "matching") {
+          return {
+            ...base,
+            pairs: q.pairs.map((pair) => ({ left: pair.left, right: "" })),
+            options: seededShuffle(
+              q.pairs.map((pair) => pair.right),
+              `${seed}:${String(q._id)}`,
+            ),
+          }
+        }
+
+        if (q.type === "ordering") {
+          return { ...base, options: seededShuffle(q.options, `${seed}:${String(q._id)}`) }
+        }
+
+        return base
+      }),
       totalPoints,
       canEdit: false,
       myAttempts: attempts,
@@ -86,23 +116,47 @@ const questionSchema = z.object({
   _id: z.string().optional(),
   prompt: z.string().min(1).max(5000),
   type: z.enum(QUESTION_TYPES),
-  options: z.array(z.string().max(500)).max(12).default([]),
-  correctAnswers: z.array(z.string().max(500)).max(12).default([]),
+  options: z.array(z.string().max(500)).max(20).default([]),
+  correctAnswers: z.array(z.string().max(1000)).max(20).default([]),
+  pairs: z
+    .array(z.object({ left: z.string().max(500), right: z.string().max(500) }))
+    .max(20)
+    .default([]),
   points: z.number().min(0).max(1000).default(1),
   explanation: z.string().max(2000).optional(),
+  media: z
+    .object({
+      kind: z.enum(["image", "audio", "video"]),
+      url: z.string().url(),
+      fileId: z.string().optional(),
+    })
+    .optional(),
+  required: z.boolean().default(false),
   order: z.number().int().min(0).default(0),
 })
 
 const updateSchema = z.object({
   title: z.string().min(2).max(200).optional(),
   description: z.string().max(5000).optional(),
+  instructions: z.string().max(20_000).optional(),
   kind: z.enum(["quiz", "test", "practice"]).optional(),
   questions: z.array(questionSchema).optional(),
   timeLimit: z.number().int().min(0).max(600).optional(),
   attemptsAllowed: z.number().int().min(0).max(50).optional(),
-  showAnswers: z.boolean().optional(),
+  passingScore: z.number().min(0).max(100).optional(),
+
   shuffleQuestions: z.boolean().optional(),
+  shuffleAnswers: z.boolean().optional(),
+  oneQuestionAtATime: z.boolean().optional(),
+  allowBacktrack: z.boolean().optional(),
+
+  releaseResults: z.enum(["immediately", "after-review"]).optional(),
+  showAnswers: z.boolean().optional(),
+  showExplanations: z.boolean().optional(),
+
+  availableFrom: z.coerce.date().optional(),
   dueDate: z.coerce.date().optional(),
+  closesAt: z.coerce.date().optional(),
   status: z.enum(["draft", "published"]).optional(),
 })
 

@@ -2,21 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
-import {
-  BookOpen,
-  Brain,
-  CheckCircle,
-  Clock,
-  FileText,
-  HelpCircle,
-  Lock,
-  MapPin,
-  PenTool,
-  Play,
-  Plus,
-  Users,
-  Video,
-} from "lucide-react"
+import { BookOpen, CheckCircle, Clock, MapPin, Play, Plus, Users } from "lucide-react"
 
 import { useApi } from "@/hooks/use-api"
 import { AsyncState } from "@/components/ui/async-state"
@@ -25,18 +11,24 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { LessonEditorDialog } from "@/components/courses/lesson-editor-dialog"
+import type { LessonType } from "@/lib/lessons/types"
+import { LessonCard } from "@/components/lessons/lesson-card"
+import { LessonEditorDialog } from "@/components/lessons/lesson-editor-dialog"
 
 export interface ApiLesson {
   _id: string
   title: string
   description?: string
-  type: "video" | "reading" | "interactive" | "quiz" | "assignment"
+  type: LessonType
   duration?: string
   order: number
-  content?: string
-  videoUrl?: string
+  status: "draft" | "published"
+  availableFrom?: string
+  completion: { rule: string; watchPercent?: number; minScore?: number }
   materials: { name: string; url: string; size?: number }[]
+  /** Attached by the course route for assignment lessons, for the card label. */
+  points?: number | null
+  dueDate?: string | null
 }
 
 export interface ApiModule {
@@ -64,21 +56,6 @@ export interface ApiCourseDetail {
     progress: number
     completedLessonIds: string[]
     lessonCount: number
-  }
-}
-
-function lessonIcon(type: ApiLesson["type"]) {
-  switch (type) {
-    case "video":
-      return <Video className="h-4 w-4" />
-    case "interactive":
-      return <Brain className="h-4 w-4" />
-    case "quiz":
-      return <HelpCircle className="h-4 w-4" />
-    case "assignment":
-      return <PenTool className="h-4 w-4" />
-    default:
-      return <FileText className="h-4 w-4" />
   }
 }
 
@@ -267,64 +244,19 @@ export default function CourseModules({ courseId }: { courseId: string }) {
                               This module has no lessons yet.
                             </p>
                           )}
-                          {lessons.map((lesson, i) => {
-                            const isDone = completed.has(lesson._id)
-                            const unlocked = unlockedAt(lesson._id)
-
-                            return (
-                              <div
-                                key={lesson._id}
-                                className={`flex items-center justify-between rounded-lg border p-3 transition-colors ${
-                                  unlocked
-                                    ? "cursor-pointer hover:bg-emerald-50"
-                                    : "cursor-not-allowed bg-gray-50"
-                                }`}
-                                onClick={() => openLesson(lesson._id)}
-                              >
-                                <div className="flex items-center gap-3">
-                                  <span className="w-6 text-xs text-muted-foreground">{i + 1}.</span>
-                                  {isDone ? (
-                                    <CheckCircle className="h-4 w-4 text-green-600" />
-                                  ) : unlocked ? (
-                                    lessonIcon(lesson.type)
-                                  ) : (
-                                    <Lock className="h-4 w-4 text-gray-400" />
-                                  )}
-                                  <div>
-                                    <div className="text-sm font-medium">{lesson.title}</div>
-                                    <div className="text-xs text-muted-foreground">
-                                      {lesson.description ??
-                                        (unlocked
-                                          ? ""
-                                          : "Complete the previous lesson to unlock this")}
-                                    </div>
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                  <Badge variant="outline" className="text-xs">
-                                    {lesson.type}
-                                  </Badge>
-                                  {lesson.duration && (
-                                    <span className="text-xs text-muted-foreground">
-                                      {lesson.duration}
-                                    </span>
-                                  )}
-                                  {canEdit && (
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        setEditing({ lesson, moduleId: module._id })
-                                      }}
-                                    >
-                                      Edit
-                                    </Button>
-                                  )}
-                                </div>
-                              </div>
-                            )
-                          })}
+                          {lessons.map((lesson, i) => (
+                            <LessonCard
+                              key={lesson._id}
+                              lesson={lesson}
+                              index={i}
+                              completed={completed.has(lesson._id)}
+                              unlocked={unlockedAt(lesson._id)}
+                              canEdit={canEdit}
+                              onOpen={() => openLesson(lesson._id)}
+                              onEdit={() => setEditing({ lesson, moduleId: module._id })}
+                              onPreview={() => openLesson(lesson._id)}
+                            />
+                          ))}
                         </div>
                       </CardContent>
                     )}
@@ -341,7 +273,7 @@ export default function CourseModules({ courseId }: { courseId: string }) {
           open
           courseId={courseId}
           moduleId={editing.moduleId}
-          lesson={editing.lesson}
+          lessonId={editing.lesson?._id}
           onOpenChange={(isOpen: boolean) => !isOpen && setEditing(null)}
           onSaved={() => {
             setEditing(null)

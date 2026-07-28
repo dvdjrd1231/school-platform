@@ -203,7 +203,8 @@ export const BUILTIN_ACTIVITY_LABELS: Record<BuiltinActivity, string> = {
  */
 export function lessonCardLabel(lesson: {
   type: LessonType
-  duration?: string
+  /** Null as well as undefined: the API returns null for "not set". */
+  duration?: string | null
   points?: number | null
   dueDate?: string | Date | null
 }): string {

@@ -107,25 +107,49 @@ export async function GET(req: Request) {
 const questionSchema = z.object({
   prompt: z.string().min(1).max(5000),
   type: z.enum(QUESTION_TYPES).default("multiple-choice"),
-  options: z.array(z.string().max(500)).max(12).default([]),
-  correctAnswers: z.array(z.string().max(500)).max(12).default([]),
+  options: z.array(z.string().max(500)).max(20).default([]),
+  correctAnswers: z.array(z.string().max(1000)).max(20).default([]),
+  pairs: z
+    .array(z.object({ left: z.string().max(500), right: z.string().max(500) }))
+    .max(20)
+    .default([]),
   points: z.number().min(0).max(1000).default(1),
   explanation: z.string().max(2000).optional(),
+  media: z
+    .object({
+      kind: z.enum(["image", "audio", "video"]),
+      url: z.string().url(),
+      fileId: z.string().optional(),
+    })
+    .optional(),
+  required: z.boolean().default(false),
   order: z.number().int().min(0).default(0),
 })
 
 const createSchema = z.object({
   title: z.string().min(2).max(200),
   description: z.string().max(5000).optional(),
+  instructions: z.string().max(20_000).optional(),
   kind: z.enum(["quiz", "test", "practice"]).default("quiz"),
   course: z.string(),
   lesson: z.string().optional(),
   questions: z.array(questionSchema).default([]),
   timeLimit: z.number().int().min(0).max(600).default(0),
   attemptsAllowed: z.number().int().min(0).max(50).default(1),
-  showAnswers: z.boolean().default(true),
+  passingScore: z.number().min(0).max(100).default(0),
+
   shuffleQuestions: z.boolean().default(false),
+  shuffleAnswers: z.boolean().default(false),
+  oneQuestionAtATime: z.boolean().default(true),
+  allowBacktrack: z.boolean().default(true),
+
+  releaseResults: z.enum(["immediately", "after-review"]).default("immediately"),
+  showAnswers: z.boolean().default(true),
+  showExplanations: z.boolean().default(true),
+
+  availableFrom: z.coerce.date().optional(),
   dueDate: z.coerce.date().optional(),
+  closesAt: z.coerce.date().optional(),
   status: z.enum(["draft", "published"]).default("draft"),
 })
 
