@@ -93,6 +93,36 @@ sudo ufw status
 
 Port 27017 is deliberately absent — MongoDB stays on the internal network.
 
+### Your host probably has a *second* firewall
+
+Contabo, Hetzner, OVH, DigitalOcean and most others run a firewall **outside**
+the virtual machine, configured in their web panel. `ufw` cannot see it and
+cannot open it.
+
+This is worth doing now rather than discovering later, because the symptom is
+misleading: everything on the server looks correct — `ufw` allows 443, Docker is
+listening on it — and connections simply time out. Certificate issuing then
+fails too, because Let's Encrypt can't reach the server either.
+
+In your provider's control panel, find the VPS firewall and allow inbound:
+
+| Port | Protocol | Why |
+|---|---|---|
+| 22 | TCP | SSH |
+| 80 | TCP | HTTP, and the Let's Encrypt HTTP-01 challenge |
+| 443 | TCP | HTTPS |
+| 443 | UDP | HTTP/3 (QUIC), which Caddy serves by default |
+
+Check both firewalls agree before going further:
+
+```bash
+sudo ufw status                                   # inside the VM
+timeout 5 curl -sI http://$(curl -s ifconfig.me)  # through the provider's
+```
+
+If that `curl` times out, port 80 is blocked upstream — fix the panel before
+continuing, or nothing later in this guide will work.
+
 ---
 
 ## 4. Install Docker
@@ -200,6 +230,20 @@ chmod 600 .env
 
 Only one process on a machine can hold ports 80 and 443, so which command you
 run depends on whether this is the only site on the server.
+
+**Check first.** Starting a second proxy fails with *"Bind for 0.0.0.0:443
+failed: port is already allocated"*, and it fails at the end of a full image
+build, after the app and database have already started:
+
+```bash
+sudo ss -tulpn | grep -E ':(80|443)\s'
+docker ps --format '{{.Names}}\t{{.Ports}}' | grep -E '80|443'
+```
+
+- **Nothing listed** → §7a below.
+- **Another container** (a different site, another compose project) → §7b.
+- **`nginx` / `apache2`** → either stop it (`sudo systemctl disable --now nginx`)
+  and use §7a, or keep it and route through it as in §7b.
 
 ### 7a. This is the only site (Caddy comes with the stack)
 
@@ -476,11 +520,61 @@ docker compose down -v           # stop AND DELETE the database volume
 
 ## Troubleshooting
 
+**`Bind for 0.0.0.0:443 failed: port is already allocated`**
+
+Something else on the machine owns 443 — usually another site's proxy, or a
+host `nginx`. Two proxies cannot share the port. Find it and pick a side:
+
+```bash
+sudo ss -tulpn | grep ':443'
+docker ps --format '{{.Names}}\t{{.Ports}}' | grep 443
+```
+
+Then either stop the other one and use §7a, or drop `--profile standalone` and
+route through it as in §7b. **`--profile standalone` is only ever correct when
+nothing else is on 80/443.**
+
+If `ss` shows `docker-proxy` but `docker ps` lists no container, it's a leaked
+port mapping from a container that died: `sudo systemctl restart docker`.
+
+**`ERR_SSL_PROTOCOL_ERROR` in the browser**
+
+You're on `https://` but the site is configured for plain HTTP (`DOMAIN=:80`),
+so nothing is listening for TLS. Use `http://`. Chrome silently upgrades bare
+addresses to HTTPS — turn off *Always use secure connections* in
+`chrome://settings/security`, or type `http://` explicitly.
+
+**`ERR_TIMED_OUT` on HTTPS while HTTP works**
+
+Port 443 is blocked upstream. A closed port refuses instantly; a timeout means
+packets are being dropped. `ufw` is not the culprit — Docker writes its own
+iptables rules and bypasses it for published ports. Check the provider's
+firewall panel (§3). Confirm from the server itself:
+
+```bash
+timeout 8 curl -sk -o /dev/null -w '%{http_code}\n' https://YOUR_DOMAIN/
+```
+
+A timeout there, with Caddy listening locally, means the block is outside the VM.
+
+**`HTTP/1.1 307` from `curl -I http://localhost` — this is correct**
+
+The app redirects signed-out visitors to `/signin`. Check the `Location` header:
+if it starts `http://`, everything is working. It is not an HTTPS redirect.
+
+**`curl: (56) Connection reset by peer` right after starting**
+
+Caddy was still starting. Wait a few seconds and retry. On first run with a real
+domain it also has to fetch a certificate, which takes 10–30 seconds, and 443
+doesn't answer until that finishes.
+
 **Certificate won't issue / site not reachable over HTTPS**
 Check `docker compose logs caddy`. Usually one of:
 - the DNS `A` record doesn't point at this server yet (`dig +short YOUR_DOMAIN`)
-- ports 80/443 are blocked — `sudo ufw status`, plus any provider-level firewall
+- ports 80/443 are blocked — `sudo ufw status`, **plus the provider firewall (§3)**
 - `DOMAIN` in `.env` doesn't exactly match the DNS name
+- no certificate is possible at all: `DOMAIN` is a bare IP address. Public
+  authorities do not issue for IPs — a domain name is required for HTTPS.
 
 **Logs repeat `TypeError: Invalid URL` with `input: 'https://'`**
 `DOMAIN` is missing or empty in `.env`, so `NEXTAUTH_URL` became the bare
