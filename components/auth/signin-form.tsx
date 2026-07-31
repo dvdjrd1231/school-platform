@@ -3,7 +3,7 @@
 import type React from "react"
 
 import { useState } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useSearchParams } from "next/navigation"
 import { signIn, getSession } from "next-auth/react"
 import Link from "next/link"
 
@@ -29,7 +29,6 @@ export function SignInForm() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
 
-  const router = useRouter()
   const searchParams = useSearchParams()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -59,9 +58,20 @@ export function SignInForm() {
         destination = landingPathForRoles(session?.user?.roles)
       }
 
-      router.push(destination)
-      // Pull the new session into client components that already mounted.
-      router.refresh()
+      // A full document load, not router.push(). Two reasons:
+      //
+      // 1. router.push() followed by router.refresh() is a race — the refresh
+      //    can abort the navigation that push has only just started, leaving
+      //    the user sitting on the sign-in form with a valid session, no error
+      //    message, and no idea anything worked. It is timing-dependent, so it
+      //    passes locally on a warm dev server and shows up on a loaded one.
+      // 2. Every server component mounted before sign-in rendered as a signed-
+      //    out visitor. A hard load re-renders the whole tree with the session
+      //    cookie attached, which is what refresh() was reaching for anyway.
+      //
+      // The cost is one page load, on the single navigation where the user is
+      // already waiting for the server.
+      window.location.assign(destination)
     } catch {
       setError("Something went wrong. Please try again.")
     } finally {

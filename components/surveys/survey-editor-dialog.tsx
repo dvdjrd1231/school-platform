@@ -188,7 +188,7 @@ export function SurveyEditorDialog({ open, surveyId, onOpenChange, onSaved }: Pr
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] max-w-2xl overflow-y-auto">
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>{surveyId ? "Edit survey" : "Create a survey"}</DialogTitle>
           <DialogDescription>

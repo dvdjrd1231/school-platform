@@ -85,7 +85,7 @@ export function CreateCourseDialog({ onCreated }: { onCreated: () => void }) {
           New Course
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Create a course</DialogTitle>
           <DialogDescription>

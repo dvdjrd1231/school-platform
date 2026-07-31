@@ -682,7 +682,7 @@ export function FileLibrary({
 
       {/* Preview */}
       <Dialog open={previewing !== null} onOpenChange={(open) => !open && setPreviewing(null)}>
-        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+        <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>{previewing?.title ?? previewing?.filename}</DialogTitle>
             <DialogDescription>

@@ -1,7 +1,8 @@
-# Deploying to a Debian VPS
+# Deploying to a Debian or Ubuntu VPS
 
-End-to-end setup on a fresh Debian 12 server using Docker Compose. The stack is
-three containers:
+End-to-end setup on a fresh Debian 12 or Ubuntu 22.04/24.04 server using Docker
+Compose. Step 4 detects which one you are on — the two need different Docker
+package repositories. The stack is three containers:
 
 | Container | Role | Exposed to internet |
 |---|---|---|
@@ -127,23 +128,57 @@ continuing, or nothing later in this guide will work.
 
 ## 4. Install Docker
 
-Debian's own `docker.io` package lags badly; use Docker's official repository:
+The distribution's own `docker.io` package lags badly; use Docker's official
+repository.
+
+**Docker publishes a separate repository per distribution.** Hardcoding
+`/linux/debian` on an Ubuntu box — or the reverse — produces a repo that exists
+but contains nothing matching your release, and every package then fails with
+*"Package 'docker-ce' has no installation candidate"* and *"Unable to locate
+package containerd.io"*. The lines below read the distribution and codename from
+`/etc/os-release` instead of assuming either:
 
 ```bash
-sudo apt install -y ca-certificates
+sudo apt update
+sudo apt install -y ca-certificates curl gnupg
 sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/debian/gpg \
+
+# Ubuntu and Debian each have their own path; derivatives (Mint, Pop!_OS) have
+# none, so fall back to whichever they are built on.
+. /etc/os-release
+DISTRO=$ID
+case "$DISTRO" in
+  debian|ubuntu) ;;
+  *) DISTRO=$(echo "$ID_LIKE" | awk '{print $1}') ;;
+esac
+CODENAME=${VERSION_CODENAME:-$UBUNTU_CODENAME}
+echo "Docker repo: $DISTRO / $CODENAME"      # sanity-check before continuing
+
+curl -fsSL "https://download.docker.com/linux/$DISTRO/gpg" \
   | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
 sudo chmod a+r /etc/apt/keyrings/docker.gpg
 
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-https://download.docker.com/linux/debian $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
+https://download.docker.com/linux/$DISTRO $CODENAME stable" \
   | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
 sudo apt update
 sudo apt install -y docker-ce docker-ce-cli containerd.io \
                     docker-buildx-plugin docker-compose-plugin
 ```
+
+Neither value may be empty. If `echo` above prints a blank distro or codename,
+stop — `apt update` will appear to succeed and the install will fail with the
+"no installation candidate" errors above.
+
+Confirm the repository resolves before installing:
+
+```bash
+apt-cache policy docker-ce | head -3     # "Candidate:" must not be "(none)"
+```
+
+If a previous attempt wrote a wrong `docker.list`, the commands above overwrite
+it — but run `sudo apt update` again afterwards so apt drops the stale index.
 
 Let `deploy` use Docker without `sudo`:
 
@@ -189,8 +224,13 @@ DOMAIN=school.example.com
 # No domain yet? Test over plain HTTP against the server's IP instead:
 #   DOMAIN=:80
 #   APP_URL=http://YOUR_SERVER_IP
+#   HTTPS_BIND=127.0.0.1:
 # Let's Encrypt cannot issue certificates for bare IP addresses, so HTTPS
-# requires a real domain. Switch both lines back once DNS is pointed.
+# requires a real domain. Switch all three lines back once DNS is pointed
+# (delete HTTPS_BIND, or 443 stays unreachable from outside).
+#
+# HTTPS_BIND keeps port 443 off the public interface while there is no TLS
+# site to serve on it. Without it the browser hangs — see §7c.
 
 # MongoDB credentials — invent these now; they are created on first start.
 MONGO_ROOT_USER=schooladmin
@@ -314,6 +354,26 @@ curl -I https://school.example.com
 > `.env` instead of creating `web-proxy`.
 
 ### 7c. No domain name yet — a stopgap
+
+With `DOMAIN=:80` Caddy serves plain HTTP and never obtains a certificate, so
+**nothing listens for TLS on port 443**. Set this in `.env` alongside it:
+
+```dotenv
+HTTPS_BIND=127.0.0.1:
+```
+
+That binds 443 to loopback instead of every interface. It matters more than it
+looks. Browsers upgrade a typed bare address — `203.0.113.10` — to `https://`,
+and fall back to `http://` only when the connection *fails*. If Docker publishes
+443 with nothing behind it, the connection **succeeds** and then goes silent, so
+there is no failure to fall back from and the tab hangs until it reports
+`ERR_TIMED_OUT`. Refusing the connection outright makes the browser retry over
+HTTP straight away, and the site loads.
+
+Delete the line once you move to a real domain, or 443 stays unreachable and
+HTTPS never works.
+
+---
 
 Hostname routing needs a hostname. With only a bare IP there is nothing for a
 shared proxy to route on, so if another site already owns 80/443 this app has to
@@ -544,7 +604,20 @@ so nothing is listening for TLS. Use `http://`. Chrome silently upgrades bare
 addresses to HTTPS — turn off *Always use secure connections* in
 `chrome://settings/security`, or type `http://` explicitly.
 
-**`ERR_TIMED_OUT` on HTTPS while HTTP works**
+**`ERR_TIMED_OUT` in the browser, but `curl http://YOUR_IP/` works fine**
+
+The site is up; the browser is asking on the wrong port. Typing a bare address
+makes Chrome try `https://` first, and with `DOMAIN=:80` there is no TLS site to
+answer. Set `HTTPS_BIND=127.0.0.1:` in `.env` (§7c) and
+`docker compose --profile standalone up -d`. Typing `http://` explicitly works
+either way. Check which case you're in before touching any firewall:
+
+```bash
+curl -sI -m 10 http://YOUR_IP/     # 307 to /signin  → app is fine
+curl -sI -m 10 https://YOUR_IP/    # times out       → no TLS site, see §7c
+```
+
+**`ERR_TIMED_OUT` on HTTPS while HTTP works, with a real domain configured**
 
 Port 443 is blocked upstream. A closed port refuses instantly; a timeout means
 packets are being dropped. `ufw` is not the culprit — Docker writes its own

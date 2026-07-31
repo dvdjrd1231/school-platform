@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -301,8 +302,13 @@ export default function UserManagement() {
               Add User
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
+          {/* Flex column rather than the default grid: this form grows with the
+              selected role — a student adds a whole enrolment section — so the
+              header and the Cancel/Create buttons are pinned and only the
+              fields between them scroll. p-0 moves padding onto the three
+              sections so the scrollbar runs the full height of the panel. */}
+          <DialogContent className="flex max-h-[85dvh] flex-col gap-0 overflow-hidden p-0 sm:max-w-md">
+            <DialogHeader className="border-b px-6 py-4">
               <DialogTitle>{editingId ? "Edit User" : "Add New User"}</DialogTitle>
               <DialogDescription>
                 {editingId
@@ -310,7 +316,7 @@ export default function UserManagement() {
                   : "Create a new account. This is how teacher and admin accounts are created."}
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4">
+            <DialogBody className="space-y-5 px-6 py-5">
               <div className="space-y-2">
                 <label className="text-sm font-medium">Full Name</label>
                 <Input
@@ -473,8 +479,8 @@ export default function UserManagement() {
                   {formError}
                 </p>
               )}
-            </div>
-            <DialogFooter>
+            </DialogBody>
+            <DialogFooter className="border-t px-6 py-4">
               <Button variant="outline" onClick={() => setIsAddUserOpen(false)} disabled={isSubmitting}>
                 Cancel
               </Button>

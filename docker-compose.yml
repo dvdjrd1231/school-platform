@@ -100,7 +100,17 @@ services:
     profiles: [standalone]
     ports:
       - "80:80"
-      - "443:443"
+      # Published on every interface for the normal domain + TLS case.
+      #
+      # With DOMAIN=:80 there is no TLS site, so 443 would accept connections
+      # and then answer nothing. That is worse than not listening at all:
+      # browsers upgrade a typed bare address to https:// and only fall back to
+      # http:// when the connection FAILS. A connection that succeeds and then
+      # hangs gives them nothing to fall back from, so the page sits until it
+      # times out. Setting HTTPS_BIND=127.0.0.1: keeps 443 off the public
+      # interface, the connection is refused immediately, and the browser
+      # retries over HTTP as intended.
+      - "${HTTPS_BIND:-}443:443"
     environment:
       DOMAIN: ${DOMAIN:?set DOMAIN in .env (a hostname, or :80 when testing over a bare IP)}
     volumes:
